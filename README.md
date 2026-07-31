@@ -19,6 +19,35 @@ npm test           # engine and payslip parser tests
 
 `dist/` is a static bundle — host it anywhere, or open it locally.
 
+## Deploying to Railway
+
+The repo is ready to deploy as-is: `railway.json` tells Railway to run
+`npm ci && npm run build`, then `npm start`, which serves `dist/` from `server.js` on
+Railway's `$PORT`. No Dockerfile and no runtime dependencies.
+
+**From the dashboard** (no CLI needed): New Project → Deploy from GitHub repo → pick this
+repo and branch → Settings → Networking → Generate Domain. Every push to that branch
+redeploys.
+
+**From the CLI:**
+
+```bash
+npm i -g @railway/cli
+railway login
+railway init          # or: railway link   to attach an existing project
+railway up
+railway domain        # generate a public URL
+```
+
+No environment variables are required — the app has no backend and no secrets.
+
+### One thing to know before you deploy
+
+The plan lives in the browser's `localStorage`, which is scoped to the address it was
+loaded from. A Railway URL is a different address from a local `npm run dev`, so it starts
+empty. Use Settings → Export backup on the old one and Import on the new one to carry a
+plan across, and note that a custom domain change moves the goalposts the same way.
+
 ## The pages
 
 | Page | What it is for |
