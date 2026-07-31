@@ -215,8 +215,12 @@ export function applyParsed(
 export async function extractText(file: File): Promise<string> {
   if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
     const pdfjs = await import('pdfjs-dist');
-    const worker = await import('pdfjs-dist/build/pdf.worker.mjs?url');
-    pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+    // The worker is bundled as source and started from a blob, so the app stays a
+    // self-contained page with no second file to fetch.
+    const workerSource = (await import('pdfjs-dist/build/pdf.worker.min.mjs?raw')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
+      new Blob([workerSource], { type: 'text/javascript' }),
+    );
     const buf = await file.arrayBuffer();
     const doc = await pdfjs.getDocument({ data: buf }).promise;
     const pages: string[] = [];
