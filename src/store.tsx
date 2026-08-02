@@ -3,7 +3,7 @@
  * never leaves the browser. Export/import gives you a portable backup.
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { defaultState } from './defaults';
+import { DEFAULT_CONFIG, defaultState } from './defaults';
 import { computePlan, emptyMonth, monthRange } from './engine';
 import type { AppState, MonthEntry, MonthKey, MonthResult } from './types';
 
@@ -15,6 +15,8 @@ function load(): AppState {
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw) as AppState;
     if (!parsed?.config?.fixedCosts) return defaultState();
+    // Fill in fields added after this state was saved.
+    parsed.config.bigNightThreshold ??= DEFAULT_CONFIG.bigNightThreshold;
     return parsed;
   } catch {
     return defaultState();

@@ -75,6 +75,15 @@ export function Settings() {
                 onChange={(n) => updateConfig({ defaultGuiltFree: n ?? 0 })}
               />
             </Field>
+            <Field
+              label="A night out costs at least"
+              hint="Spends this size are counted separately from everyday spending"
+            >
+              <MoneyInput
+                value={cfg.bigNightThreshold}
+                onChange={(n) => updateConfig({ bigNightThreshold: n ?? 50 })}
+              />
+            </Field>
           </div>
         </Card>
 

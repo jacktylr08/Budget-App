@@ -2,6 +2,7 @@ import { AllocationChart, BalancesChart, FundMeter, useThemeColors } from '../ch
 import { money } from '../format';
 import { currentMonthKey, monthLabel } from '../engine';
 import { useStore } from '../store';
+import { analyseSpending, formatDayOfMonth } from '../spending';
 import { Badge, Card, Money, Stat } from './ui';
 import type { MonthKey } from '../types';
 
@@ -25,6 +26,20 @@ export function Dashboard({ onOpenMonth }: { onOpenMonth: (m: MonthKey) => void 
   const noPayslip = plan.filter((m) => !m.hasPayslip && m.month <= current);
   const debtFreeMonth = plan.find((m) => m.debtTotal === 0);
   const savingsGrowth = last.savingsBalance - state.config.savingsOpeningBalance;
+
+  // Guilt-free spending for the month in progress — the thing worth knowing today.
+  const currentResult = plan.find((m) => m.month === current);
+  const spending = currentResult
+    ? analyseSpending({
+        month: current,
+        budget: currentResult.guiltFree,
+        spends: state.months[current]?.spends ?? [],
+        fallbackTotal: state.months[current]?.actualGuiltFree ?? 0,
+        bigNightThreshold: state.config.bigNightThreshold,
+      })
+    : undefined;
+  const spendingAlert =
+    spending && (spending.status === 'spent-up' || spending.projectionEveryday.runOutDay !== undefined);
 
   return (
     <>
@@ -60,9 +75,25 @@ export function Dashboard({ onOpenMonth }: { onOpenMonth: (m: MonthKey) => void 
         />
       </div>
 
-      {(unbalanced.length > 0 || shortfalls.length > 0 || noPayslip.length > 0) && (
+      {(unbalanced.length > 0 || shortfalls.length > 0 || noPayslip.length > 0 || spendingAlert) && (
         <Card title="Needs attention" style={{ marginBottom: 14 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {spending && spendingAlert && (
+              <div className={`callout ${spending.status === 'spent-up' ? 'bad' : 'warn'}`}>
+                {spending.status === 'spent-up'
+                  ? `Guilt-free budget for ${now.label} ran out on the ${formatDayOfMonth(
+                      current,
+                      spending.ranOutOnDay!,
+                    )}, ${money(Math.abs(spending.remaining))} over with ${spending.daysLeft} days left.`
+                  : `At ${money(spending.everydayRate)} a day of everyday spending, ${now.label}'s guilt-free budget runs out on the ${formatDayOfMonth(
+                      current,
+                      spending.projectionEveryday.runOutDay!,
+                    )}.`}{' '}
+                <button className="btn ghost sm" onClick={() => onOpenMonth(current)}>
+                  Open the month →
+                </button>
+              </div>
+            )}
             {unbalanced.length > 0 && (
               <div className="callout bad">
                 {unbalanced.length} month{unbalanced.length > 1 ? 's do' : ' does'} not balance:{' '}

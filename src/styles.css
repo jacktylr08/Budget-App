@@ -304,3 +304,54 @@ details.disclose summary { cursor: pointer; font-size: 12.5px; color: var(--text
   .stat-value { font-size: 22px; }
   th:first-child, td:first-child { min-width: 170px; }
 }
+
+/* ---------- Spending this month ---------- */
+.spend-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.spend-figure {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.tips { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 4px; }
+.tip {
+  border-radius: 8px;
+  padding: 10px 12px 11px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border-strong);
+}
+.tip.good { background: var(--good-bg); border-left-color: var(--good); }
+.tip.warn { background: var(--warn-bg); border-left-color: var(--warn); }
+.tip.bad { background: var(--bad-bg); border-left-color: var(--bad); }
+.tip-title { font-weight: 650; font-size: 13px; margin-bottom: 3px; color: var(--text-primary); }
+.tip.good .tip-title { color: var(--good); }
+.tip.warn .tip-title { color: var(--warn); }
+.tip.bad .tip-title { color: var(--bad); }
+.tip-body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); }
+
+.spend-log { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.spend-add { display: grid; grid-template-columns: 145px 110px 1fr auto; gap: 8px; align-items: center; }
+.spend-rows { margin-top: 8px; display: flex; flex-direction: column; }
+.spend-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.spend-row:last-child { border-bottom: none; }
+
+@media (max-width: 560px) {
+  .spend-add { grid-template-columns: 1fr 1fr; }
+  .spend-add > :nth-child(3) { grid-column: 1 / -1; }
+}

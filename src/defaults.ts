@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG: Config = {
   savingsOpeningBalance: 2311,
   defaultSavingsContribution: 400,
   defaultGuiltFree: 575,
+  bigNightThreshold: 50,
   fixedCosts: [
     { id: 'rent', name: 'Rent', defaultAmount: 500 },
     { id: 'petrol', name: 'Petrol', defaultAmount: 70 },

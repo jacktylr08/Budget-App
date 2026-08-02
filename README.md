@@ -53,7 +53,7 @@ plan across, and note that a custom domain change moves the goalposts the same w
 | Page | What it is for |
 |---|---|
 | **Dashboard** | Net position, savings, debt and fund balances over time, plus anything that needs a decision (a month that does not balance, an overcommitted month, a missing payslip). |
-| **This month** | One month in detail. Import the payslip, adjust the lines, watch the allocation waterfall and the guilt-free pace tracker. |
+| **This month** | One month in detail. Import the payslip, adjust the lines, watch the allocation waterfall, and track guilt-free spending against a projected run-out date. |
 | **Plan** | The whole plan as a grid — the workbook view. Every cell is editable; blue figures are overrides for that month, grey ones come from the defaults. |
 | **Rules** | Your own operating rules, in Markdown. The part the arithmetic cannot do. |
 | **Settings** | Fixed cost lines, sinking funds, debts, defaults, the plan window, payslip label mappings, and backup/restore. |
@@ -71,6 +71,32 @@ Apply.
   recalculated — so the plan always reflects what actually hit the account. A mismatch
   between the two is flagged rather than hidden.
 - Scanned image payslips have no text to read; type the figures into the preview instead.
+
+## Spending this month
+
+The guilt-free budget gets its own card, because a single running total cannot answer the
+question that actually matters mid-month: *I spent £100 on the first Saturday — am I in
+trouble?*
+
+Log spends as they happen (date, amount, note). Anything at or above the "a night out costs
+at least" threshold in Settings is classed as a **big night** and kept separate from
+**everyday spending**, which is what makes the projections trustworthy:
+
+- **Everyday spending only** — your day-to-day rate carried to month end, assuming no more
+  big nights. This is the headline run-out date, because it is the one you control by
+  changing habits rather than cancelling plans.
+- **Out every Fri/Sat** — everyday spending plus a night out on every remaining Friday and
+  Saturday at their typical cost. A ceiling, not a forecast.
+
+A naive daily average is deliberately not used anywhere. Two days into a month, one £100
+night averages to £58 a day and predicts disaster; that number is noise, and acting on it is
+what makes an ordinary Saturday feel like a crisis.
+
+The card also gives the safe daily allowance from today, how many more nights out fit inside
+what is left, how many no-spend days would put you back on the pace line, and how many
+Friday/Saturday nights remain to spread it across. Underneath, up to four tips translate
+those figures into a decision. When the budget is gone they point the damage at the debt and
+spillover line rather than at savings, in line with the rules.
 
 ## How a month is calculated
 

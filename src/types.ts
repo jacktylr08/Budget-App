@@ -67,6 +67,14 @@ export interface MonthIncome {
   importedAt?: string;
 }
 
+export interface SpendEntry {
+  id: string;
+  /** `YYYY-MM-DD`. */
+  date: string;
+  amount: number;
+  note?: string;
+}
+
 export interface MonthEntry {
   month: MonthKey;
   income: MonthIncome;
@@ -80,8 +88,13 @@ export interface MonthEntry {
   fundOut: Record<string, number>;
   /** Keyed by debt id. Only read for `manual` debts. */
   debtPayments: Record<string, number>;
-  /** What you have actually spent so far, for the weekly pace check. */
+  /**
+   * Running total of guilt-free spending. Kept for months logged before the spend
+   * log existed, and used whenever `spends` is empty.
+   */
   actualGuiltFree?: number;
+  /** Individual guilt-free spends, which is what the projections are built from. */
+  spends?: SpendEntry[];
   notes?: string;
   /** Set once you have reconciled the month against your bank. */
   locked?: boolean;
@@ -96,6 +109,8 @@ export interface Config {
   savingsAccountName: string;
   defaultSavingsContribution: number;
   defaultGuiltFree: number;
+  /** A single spend at or above this counts as a "big night" rather than everyday spending. */
+  bigNightThreshold: number;
   fixedCosts: LineItem[];
   funds: Fund[];
   debts: Debt[];

@@ -1,9 +1,10 @@
 import React from 'react';
-import { addMonths, currentMonthKey, guiltFreePace, monthLabel } from '../engine';
+import { addMonths, currentMonthKey, monthLabel } from '../engine';
 import { money } from '../format';
 import { useStore } from '../store';
 import { useThemeColors } from '../charts/Charts';
 import { PayslipImport } from './PayslipImport';
+import { SpendingCard } from './SpendingCard';
 import { Badge, Card, Field, Money, MoneyInput } from './ui';
 import type { MonthKey, MonthResult } from '../types';
 
@@ -32,7 +33,6 @@ export function MonthView({
   const index = months.indexOf(month);
   const prev = plan[index - 1];
   const isCurrent = month === currentMonthKey();
-  const pace = guiltFreePace(month, result.guiltFree, entry?.actualGuiltFree ?? 0);
 
   // The waterfall: each step consumes part of the take-home.
   const steps = [
@@ -239,6 +239,8 @@ export function MonthView({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <SpendingCard month={month} result={result} />
+
           <Card title="Allocation" sub={`Every penny of ${money(result.net)}`}>
             <div className="waterfall">
               {steps.map((s) => (
@@ -272,52 +274,6 @@ export function MonthView({
                 contribution or a one-off — do not let it fall through to next month.
               </div>
             )}
-          </Card>
-
-          <Card title="Guilt-free tracker" sub="The weekly check">
-            <div className="pace">
-              <div className="pace-track">
-                <div
-                  className="pace-fill"
-                  style={{
-                    width: `${Math.min(100, ((entry?.actualGuiltFree ?? 0) / Math.max(result.guiltFree, 1)) * 100)}%`,
-                    background: pace.onTrack ? 'var(--good)' : 'var(--bad)',
-                  }}
-                />
-                {pace.dayOfMonth > 0 && (
-                  <div
-                    className="pace-marker"
-                    style={{ left: `${(pace.dayOfMonth / pace.daysInMonth) * 100}%` }}
-                    title={`Pace on day ${pace.dayOfMonth}`}
-                  />
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ flex: 1, minWidth: 150 }}>
-                  <Field label="Spent so far">
-                    <MoneyInput
-                      value={entry?.actualGuiltFree}
-                      onChange={(n) => updateMonth(month, (e) => ({ ...e, actualGuiltFree: n }))}
-                    />
-                  </Field>
-                </span>
-                <span style={{ flex: 1, minWidth: 150 }}>
-                  <div className="stat-label">Budget</div>
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>{money(result.guiltFree)}</div>
-                </span>
-              </div>
-              {pace.dayOfMonth > 0 ? (
-                <div className={`callout ${pace.onTrack ? 'good' : 'warn'}`}>
-                  Day {pace.dayOfMonth} of {pace.daysInMonth}. Pace says {money(pace.expected)};
-                  you are {pace.onTrack ? 'under by' : 'over by'} {money(Math.abs(pace.variance))}.
-                  {pace.daysInMonth > pace.dayOfMonth && (
-                    <> {money(pace.remaining)} left — {money(pace.perDayRemaining)} a day.</>
-                  )}
-                </div>
-              ) : (
-                <div className="callout">Not started yet — the budget is {money(result.guiltFree)}.</div>
-              )}
-            </div>
           </Card>
 
           <Card title="Balances at the end of the month">

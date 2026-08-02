@@ -12,7 +12,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { round2 } from '../engine';
 import { money, moneyShort } from '../format';
+import type { SpendingAnalysis } from '../spending';
 import type { MonthResult } from '../types';
 
 /**
@@ -215,5 +217,95 @@ export function FundMeter({
         {money(balance)} of {money(target)} · {Math.round(ratio * 100)}%
       </div>
     </div>
+  );
+}
+
+/**
+ * Burn-down of the guilt-free budget: what has actually been spent against the even
+ * pace line, then two dashed projections from today — one assuming nights out carry on
+ * at the same rate, one assuming everyday spending only.
+ */
+export function SpendBurndownChart({ analysis }: { analysis: SpendingAnalysis }) {
+  const c = useThemeColors();
+  const { dayOfMonth, spent, budget } = analysis;
+
+  const data = useMemo(
+    () =>
+      analysis.cumulativeByDay.map(({ day, spent: actual, budgetLine }) => {
+        const from = day - dayOfMonth;
+        const beyondToday = day >= dayOfMonth && dayOfMonth > 0;
+        return {
+          day,
+          Pace: budgetLine,
+          Spent: actual,
+          // Projections start at today's actual total so the lines join up.
+          'Everyday spending only': beyondToday
+            ? round2(spent + analysis.projectionEveryday.rate * from)
+            : null,
+          'Out every Fri/Sat': beyondToday
+            ? round2(spent + analysis.projectionEveryWeekend.rate * from)
+            : null,
+        };
+      }),
+    [analysis, dayOfMonth, spent],
+  );
+
+  const runOut = analysis.ranOutOnDay ?? analysis.projectionEveryday.runOutDay;
+
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
+        <CartesianGrid stroke={c.grid} vertical={false} />
+        <XAxis dataKey="day" {...axisProps(c.text)} interval={4} />
+        <YAxis {...axisProps(c.text)} tickFormatter={moneyShort} width={52} />
+        <Tooltip
+          content={<MoneyTooltip />}
+          labelFormatter={(d) => `Day ${d}`}
+          cursor={{ stroke: c.muted, strokeWidth: 1 }}
+        />
+        <Legend verticalAlign="top" align="left" height={28} iconType="plainline" wrapperStyle={{ fontSize: 12, color: c.text }} />
+        <ReferenceLine
+          y={budget}
+          stroke={c.bad}
+          strokeDasharray="2 3"
+          label={{ value: 'Budget', position: 'insideTopRight', fill: c.text, fontSize: 11 }}
+        />
+        {runOut !== undefined && (
+          <ReferenceLine
+            x={runOut}
+            stroke={c.bad}
+            strokeWidth={1.5}
+            label={{ value: `runs out ${runOut}`, position: 'top', fill: c.bad, fontSize: 11 }}
+          />
+        )}
+        {dayOfMonth > 0 && <ReferenceLine x={dayOfMonth} stroke={c.muted} strokeDasharray="3 3" />}
+        <Line type="linear" dataKey="Pace" stroke={c.muted} strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+        <Line
+          type="monotone"
+          dataKey="Out every Fri/Sat"
+          stroke={c.series[1]}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="Everyday spending only"
+          stroke={c.series[2]}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+          dot={false}
+        />
+        <Line
+          type="monotone"
+          dataKey="Spent"
+          stroke={c.series[0]}
+          strokeWidth={2.5}
+          dot={false}
+          activeDot={{ r: 4, strokeWidth: 2, stroke: c.surface }}
+          connectNulls={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
