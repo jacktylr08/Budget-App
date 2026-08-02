@@ -184,3 +184,100 @@ describe('inputs and edges', () => {
     expect(formatDayOfMonth(AUG, 11)).toBe('Tue 11th');
   });
 });
+
+describe('lumpy spending, not a flat daily rate', () => {
+  // Spends on 4 of 12 days, nothing on the other 8 — the normal shape of a month.
+  const spends = [
+    spend('2026-08-02', 18),
+    spend('2026-08-05', 22),
+    spend('2026-08-08', 15),
+    spend('2026-08-11', 25),
+  ];
+  const a = analyse(spends, 12);
+
+  it('measures how often you spend, not a rate per calendar day', () => {
+    expect(a.spendDays).toBe(4);
+    expect(a.noSpendDays).toBe(8);
+    expect(a.typicalSpendDay).toBe(20); // median of 15, 18, 22, 25
+    expect(a.spendDayFrequency).toBeCloseTo(1 / 3, 2);
+  });
+
+  it('projects whole spend days ahead, not fractions of a day', () => {
+    // One day in three across the 19 days left is about 6 more spend days at £20.
+    expect(a.expectedSpendDaysLeft).toBe(6);
+    expect(a.projectedEverydayRemaining).toBe(120);
+    expect(a.projectionEveryday.endOfMonthTotal).toBe(200);
+  });
+
+  it('describes the pattern in the tips instead of a fictional daily figure', () => {
+    const text = a.tips.map((t) => `${t.title} ${t.body}`).join(' ');
+    expect(text).toMatch(/about 1 day in 3, £20 a time/);
+    expect(text).not.toMatch(/£6\.\d\d a day/);
+  });
+
+  it('warns that a short history is only a sketch', () => {
+    const early = analyse([spend('2026-08-02', 18)], 3);
+    expect(early.thinEvidence).toBe(true);
+    expect(early.tips.some((t) => t.id === 'thin-evidence')).toBe(true);
+  });
+
+  it('stops calling it thin once a pattern has actually formed', () => {
+    expect(a.thinEvidence).toBe(false);
+    expect(a.tips.some((t) => t.id === 'thin-evidence')).toBe(false);
+  });
+
+  it('counts a no-spend day as a no-spend day, not an average', () => {
+    // Nothing at all since the 11th: the pattern still says one day in three.
+    const later = analyse(spends, 20);
+    expect(later.spendDays).toBe(4);
+    expect(later.noSpendDays).toBe(16);
+    expect(later.spendDayFrequency).toBeCloseTo(0.2, 2);
+  });
+});
+
+describe('a night out spread across several transactions', () => {
+  // Bar, taxi and food on one Saturday: six small payments, one big night.
+  const night = [
+    spend('2026-08-01', 24, 'Bar'),
+    spend('2026-08-01', 31.5, 'Bar'),
+    spend('2026-08-01', 18, 'Taxi'),
+    spend('2026-08-01', 12, 'Kebab'),
+    spend('2026-08-01', 19, 'Round'),
+  ];
+  const a = analyse([...night, spend('2026-08-03', 9)], 5);
+
+  it('classifies the day, not the individual payments', () => {
+    expect(a.bigNights).toHaveLength(1);
+    expect(a.bigNights[0].amount).toBe(104.5);
+    expect(a.bigNights[0].note).toContain('Taxi');
+  });
+
+  it('keeps that day out of the everyday pattern', () => {
+    expect(a.everydaySpent).toBe(9);
+    expect(a.spendDays).toBe(1);
+    expect(a.typicalSpendDay).toBe(9);
+  });
+
+  it('reaches the same conclusion as logging it as one entry', () => {
+    const single = analyse([spend('2026-08-01', 104.5), spend('2026-08-03', 9)], 5);
+    expect(a.bigNights[0].amount).toBe(single.bigNights[0].amount);
+    expect(a.everydaySpent).toBe(single.everydaySpent);
+    expect(a.projectionEveryday.endOfMonthTotal).toBe(single.projectionEveryday.endOfMonthTotal);
+  });
+});
+
+describe('spends dated later in the month', () => {
+  // A CSV import can carry a transaction dated after today.
+  const a = analyse([spend('2026-08-02', 12), spend('2026-08-06', 14)], 2);
+
+  it('counts the money but keeps it out of the pattern', () => {
+    expect(a.spent).toBe(26);
+    expect(a.spendDays).toBe(1);
+    expect(a.typicalSpendDay).toBe(12);
+  });
+
+  it('never claims you spend on more days than have happened', () => {
+    expect(a.spendDays).toBeLessThanOrEqual(a.dayOfMonth);
+    expect(a.spendDayFrequency).toBeLessThanOrEqual(1);
+  });
+});

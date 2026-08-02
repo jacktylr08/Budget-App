@@ -3,6 +3,7 @@ import { SpendBurndownChart } from '../charts/Charts';
 import { money } from '../format';
 import { analyseSpending, formatDayOfMonth } from '../spending';
 import { useStore } from '../store';
+import { MonzoImport } from './MonzoImport';
 import { Badge, Card, MoneyInput } from './ui';
 import type { MonthKey, MonthResult, SpendEntry } from '../types';
 
@@ -54,6 +55,9 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
     [month, result.guiltFree, spends, entry?.actualGuiltFree, state.config.bigNightThreshold, biggestFund],
   );
 
+  // Log individual spends, or just keep one number — both are always available.
+  const [mode, setMode] = useState<'log' | 'total'>(spends.length > 0 ? 'log' : 'total');
+
   const [draft, setDraft] = useState<{ date: string; amount: number | undefined; note: string }>({
     date: todayIn(month),
     amount: undefined,
@@ -87,7 +91,7 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
     if (a.projectionEveryday.runOutDay !== undefined) {
       return {
         value: formatDayOfMonth(month, a.projectionEveryday.runOutDay),
-        sub: `at ${money(a.everydayRate)}/day, no nights out`,
+        sub: 'on your usual pattern, no nights out',
         tone: 'bad',
       };
     }
@@ -131,7 +135,9 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
           <div className="stat-label">Safe per day</div>
           <div className="spend-figure">{money(a.dailyAllowance)}</div>
           <div className="card-sub">
-            {a.everydayRate > 0 ? `everyday rate ${money(a.everydayRate)}` : 'no everyday spend yet'}
+            {a.spendDays > 0
+              ? `you spend on ${a.spendDays} of ${a.dayOfMonth} days, ${money(a.typicalSpendDay)} a time`
+              : 'no everyday spending logged yet'}
           </div>
         </div>
         <div>
@@ -179,6 +185,14 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
       <div className="spend-log">
         <div className="card-head" style={{ marginBottom: 8 }}>
           <h3>Spend log</h3>
+          <div className="chip-row" style={{ marginLeft: 10 }}>
+            <button className="chip" aria-pressed={mode === 'log'} onClick={() => setMode('log')}>
+              Log each spend
+            </button>
+            <button className="chip" aria-pressed={mode === 'total'} onClick={() => setMode('total')}>
+              Running total
+            </button>
+          </div>
           <div className="spacer" />
           <span className="card-sub">
             {spends.length > 0
@@ -189,6 +203,37 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
           </span>
         </div>
 
+      {mode === 'total' ? (
+        <>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <label className="field" style={{ maxWidth: 200 }}>
+              <span>Spent so far this month</span>
+              <MoneyInput
+                value={entry?.actualGuiltFree}
+                onChange={(n) => updateMonth(month, (e) => ({ ...e, actualGuiltFree: n }))}
+              />
+            </label>
+            <p style={{ margin: 0, flex: 1, minWidth: 240 }}>
+              One number, updated whenever you check your bank. Quick — but with no dates the
+              projection has to assume you spend evenly, which no one does.
+              {spends.length > 0 && (
+                <>
+                  {' '}
+                  <strong>
+                    {spends.length} logged spend{spends.length === 1 ? '' : 's'} are being used
+                    instead of this figure.
+                  </strong>
+                </>
+              )}
+            </p>
+          </div>
+          <details className="disclose">
+            <summary>Import from a Monzo CSV export</summary>
+            <MonzoImport month={month} />
+          </details>
+        </>
+      ) : (
+        <>
         <div className="spend-add">
           <input
             type="date"
@@ -216,19 +261,25 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
           </button>
         </div>
 
-        {spends.length > 0 ? (
+        <details className="disclose">
+          <summary>Import from a Monzo CSV export</summary>
+          <MonzoImport month={month} />
+        </details>
+
+        {spends.length > 0 && (
           <div className="spend-rows">
             {[...spends]
               .sort((x, y) => y.date.localeCompare(x.date))
               .map((s) => {
-                const big = s.amount >= state.config.bigNightThreshold;
+                // Classified by the day's total, so every payment from a big night is marked.
+                const big = a.bigNights.some((b) => b.date === s.date);
                 return (
                   <div className="spend-row" key={s.id}>
                     <span className="card-sub">{formatDayOfMonth(month, Number(s.date.slice(8, 10)))}</span>
                     <span>
                       {s.note || 'Spend'}
                       {big && (
-                        <span style={{ marginLeft: 8 }}>
+                        <span style={{ marginLeft: 8 }} title="This day's total counts as a big night">
                           <Badge tone="neutral">big night</Badge>
                         </span>
                       )}
@@ -243,24 +294,9 @@ export function SpendingCard({ month, result }: { month: MonthKey; result: Month
                 );
               })}
           </div>
-        ) : (
-          <details className="disclose">
-            <summary>Or just keep a running total</summary>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginTop: 8 }}>
-              <label className="field" style={{ maxWidth: 180 }}>
-                <span>Spent so far this month</span>
-                <MoneyInput
-                  value={entry?.actualGuiltFree}
-                  onChange={(n) => updateMonth(month, (e) => ({ ...e, actualGuiltFree: n }))}
-                />
-              </label>
-              <p style={{ margin: 0, flex: 1 }}>
-                Quicker, but the projection has to assume you spend evenly — so an early
-                night out will look worse than it is.
-              </p>
-            </div>
-          </details>
         )}
+        </>
+      )}
       </div>
     </Card>
   );

@@ -88,6 +88,12 @@ at least" threshold in Settings is classed as a **big night** and kept separate 
 - **Out every Fri/Sat** — everyday spending plus a night out on every remaining Friday and
   Saturday at their typical cost. A ceiling, not a forecast.
 
+Spending is lumpy — most days are nothing, some days are £20 — so it is never described as
+a flat daily rate. The pattern is measured as **how often you spend and how much when you
+do** ("about 1 day in 3, £18 a time"), and projected forward as whole spend days. A "big
+night" is a **day** whose total clears the threshold, not a single payment, because a night
+out is a bar, a taxi and a kebab rather than one transaction.
+
 A naive daily average is deliberately not used anywhere. Two days into a month, one £100
 night averages to £58 a day and predicts disaster; that number is noise, and acting on it is
 what makes an ordinary Saturday feel like a crisis.
@@ -97,6 +103,45 @@ what is left, how many no-spend days would put you back on the pace line, and ho
 Friday/Saturday nights remain to spread it across. Underneath, up to four tips translate
 those figures into a decision. When the budget is gone they point the damage at the debt and
 spillover line rather than at savings, in line with the rules.
+
+### Logging it
+
+Three ways, switchable at any time on the card:
+
+- **Running total** — one number you update when you check your bank. No dates, so the
+  projection has to assume even spending.
+- **Log each spend** — date, amount, note. This is what makes the projections real.
+- **Import a Monzo CSV** — Monzo app → Account → Statements → Export as CSV. Categories are
+  listed with totals so you choose what counts as guilt-free; rent, bills and transfers are
+  off by default because the plan budgets them elsewhere. Re-importing the same file adds
+  nothing twice, and hand-typed entries are never touched.
+
+### Why Monzo is not connected directly
+
+Checked, and it does not work — for three separate reasons:
+
+1. **Pot transactions are not exposed.** The API returns Pot balances and lets you deposit
+   and withdraw, but not what happened inside a Pot. If a Pot is set as your card's spending
+   source, those payments cannot be read. This is a long-standing, acknowledged gap.
+   ([Monzo docs](https://docs.monzo.com/), [community request](https://community.monzo.com/t/expose-pot-transaction-data-via-public-api-parity-with-main-account-transactions/193089))
+2. **The developer API is not for apps.** Monzo states it "is not suitable for building
+   public applications" — own account or a small whitelist only. It also needs a client
+   secret, which a browser-only app cannot hold, and after five minutes from authentication
+   only the last 90 days of transactions are readable. ([Monzo docs](https://docs.monzo.com/))
+3. **Open Banking aggregators do not help.** TrueLayer, Plaid, Yapily and the rest read the
+   same Open Banking account data, which has no Pot-level detail, and they need a backend
+   plus re-consent every 90 days. GoCardless Bank Account Data, the one with a free tier, has
+   stopped onboarding new customers.
+   ([aggregator list](https://www.openbankingtracker.com/provider/monzo))
+
+The CSV export has the same blind spot: payments made **directly from a Pot** are missing
+from it, as they are from Monzo's own Plus auto-export.
+([community](https://community.monzo.com/t/auto-export-transactions-that-are-made-directly-from-pots/124567))
+Pot transfers that do appear are detected and excluded, since moving money into a Pot is not
+spending.
+
+So: if guilt-free money is spent from the **main balance**, the CSV import covers it. If it
+is spent **from a Pot**, no integration can see it and it has to be logged by hand.
 
 ## How a month is calculated
 
@@ -133,7 +178,10 @@ Two behaviours are worth knowing:
 `src/engine.test.ts` runs the seeded plan through the engine and asserts it reproduces the
 original workbook's own computed values — net pay, fixed subtotals, savings running total,
 each fund balance, the debt waterfall, spillover, and net position — for all eleven months.
-`src/payslip.test.ts` covers the parser against typical payslip layouts.
+`src/payslip.test.ts` covers the parser against typical payslip layouts. `src/spending.test.ts`
+covers the projections — including the first-Saturday big night, lumpy spending with no-spend
+days, and a night out spread across six transactions. `src/monzoCsv.test.ts` covers the
+import, including Pot exclusion and re-import safety.
 
 ## Where the data lives
 
