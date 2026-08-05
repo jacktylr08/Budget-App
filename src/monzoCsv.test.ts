@@ -4,6 +4,7 @@ import {
   parseMonzoCsv,
   parseMonzoDate,
   rowsToSpends,
+  rowsToSpendsByMonth,
   splitCsvLine,
 } from './monzoCsv';
 
@@ -49,8 +50,21 @@ describe('parsing a Monzo export', () => {
     expect(r.potTransferTotal).toBe(125);
   });
 
-  it('says plainly that spending from a Pot is not in the file', () => {
-    expect(r.warnings.join(' ')).toMatch(/directly from.*Pot is not in this file/i);
+  it('keeps card payments but drops transfers between Pots', () => {
+    expect(r.warnings.join(' ')).toMatch(/Card payments made from a Pot are kept/i);
+  });
+
+  it('treats an investment transfer as saving, not spending', () => {
+    const withInvest = parseMonzoCsv(
+      CSV + '\ntx_011,04/08/2026,09:00,Card payment,Trading 212,,Uncategorised,-1670.62,GBP,,T212',
+    );
+    expect(withInvest.rows.some((x) => x.description === 'Trading 212')).toBe(false);
+    expect(withInvest.investmentTotal).toBe(1670.62);
+    expect(withInvest.warnings.join(' ')).toMatch(/treated as saving, not spending/i);
+  });
+
+  it('totals each month so a year can be reviewed before importing', () => {
+    expect(r.monthTotals['2026-08']).toBe(596);
   });
 
   it('totals each category so they can be included or excluded', () => {
@@ -122,5 +136,28 @@ describe('awkward files', () => {
     const r = parseMonzoCsv('Date,Name,Category,Amount\nnot-a-date,X,Y,-5\n08/08/2026,Z,Y,-6');
     expect(r.rows).toHaveLength(1);
     expect(r.warnings.join(' ')).toMatch(/1 row had a date that could not be read/);
+  });
+});
+
+describe('importing a whole file at once', () => {
+  const MULTI = `Transaction ID,Date,Type,Name,Category,Amount
+a1,03/06/2026,Card payment,Pub,Eating out,-40.00
+a2,11/06/2026,Card payment,Tesco,Groceries,-12.00
+a3,04/07/2026,Card payment,Pub,Eating out,-55.00
+a4,02/08/2026,Card payment,Cinema,Entertainment,-14.00`;
+
+  it('splits a year of rows into one log per month', () => {
+    const r = parseMonzoCsv(MULTI);
+    const byMonth = rowsToSpendsByMonth(r.rows, new Set(['Eating out', 'Groceries', 'Entertainment']));
+    expect(Object.keys(byMonth).sort()).toEqual(['2026-06', '2026-07', '2026-08']);
+    expect(byMonth['2026-06']).toHaveLength(2);
+    expect(r.monthTotals).toEqual({ '2026-06': 52, '2026-07': 55, '2026-08': 14 });
+  });
+
+  it('respects the category choice across every month', () => {
+    const r = parseMonzoCsv(MULTI);
+    const byMonth = rowsToSpendsByMonth(r.rows, new Set(['Eating out']));
+    expect(byMonth['2026-06']).toHaveLength(1);
+    expect(byMonth['2026-08']).toBeUndefined();
   });
 });

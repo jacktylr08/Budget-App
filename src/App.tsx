@@ -3,6 +3,7 @@ import { Dashboard } from './components/Dashboard';
 import { MonthView } from './components/MonthView';
 import { PlanGrid } from './components/PlanGrid';
 import { PlanList } from './components/PlanList';
+import { History } from './components/History';
 import { Rules } from './components/Rules';
 import { Settings } from './components/Settings';
 import { currentMonthKey } from './engine';
@@ -11,12 +12,13 @@ import { StoreProvider, useStore } from './store';
 import { useIsMobile } from './useMediaQuery';
 import type { MonthKey } from './types';
 
-type Tab = 'dashboard' | 'month' | 'plan' | 'rules' | 'settings';
+type Tab = 'dashboard' | 'month' | 'plan' | 'history' | 'rules' | 'settings';
 
 const TABS: Array<{ id: Tab; label: string; short: string; icon: string }> = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: '◈' },
   { id: 'month', label: 'This month', short: 'Month', icon: '◑' },
   { id: 'plan', label: 'Plan', short: 'Plan', icon: '☰' },
+  { id: 'history', label: 'History', short: 'History', icon: '◔' },
   { id: 'rules', label: 'Rules', short: 'Rules', icon: '§' },
   { id: 'settings', label: 'Settings', short: 'Setup', icon: '⚙' },
 ];
@@ -122,6 +124,21 @@ function Shell() {
               </div>
             </div>
             {isMobile ? <PlanList onOpenMonth={openMonth} /> : <PlanGrid onOpenMonth={openMonth} />}
+          </>
+        )}
+
+        {tab === 'history' && (
+          <>
+            <div className="page-head">
+              <div>
+                <h1>History</h1>
+                <p>
+                  What your logs actually say. These are the figures the plan should be set
+                  from — not an estimate of what a month costs, but what yours have cost.
+                </p>
+              </div>
+            </div>
+            <History />
           </>
         )}
 

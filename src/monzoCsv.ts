@@ -1,9 +1,12 @@
 /**
- * Monzo CSV import.
+ * Monzo CSV import — main-account exports and per-Pot exports alike.
  *
- * Monzo's own API does not expose what happens inside a Pot, and neither does its CSV
- * export, so a spend made directly from a Pot cannot be imported by any route — those
- * still have to be logged by hand. Everything spent from the main balance is here.
+ * The Monzo API does not expose what happens inside a Pot, and neither does the
+ * main-account CSV. A **per-Pot export**, taken from the Pot itself in the app, does: it
+ * lists the card payments made from that Pot. That is the file to use for a spending Pot.
+ *
+ * Both shapes contain rows that are not spending, and both are filtered out here:
+ * transfers in and out of the Pot, and payments to investment platforms, which are saving.
  *
  * The export's columns have changed over the years, so headers are matched by name
  * rather than position, and both the `Amount` and `Money Out` layouts are handled.
@@ -21,6 +24,8 @@ export interface MonzoRow {
   category: string;
   /** Transfers into and out of Pots, which are not spending. */
   isPotTransfer: boolean;
+  /** Money moved to an investment or savings platform — saving, not spending. */
+  isInvestment: boolean;
 }
 
 export interface MonzoParseResult {
@@ -29,9 +34,32 @@ export interface MonzoParseResult {
   categories: Array<{ name: string; total: number; count: number }>;
   potTransferTotal: number;
   potTransferCount: number;
+  investmentTotal: number;
+  investmentCount: number;
   months: MonthKey[];
+  /** Spend total per month, so a whole file can be reviewed before importing. */
+  monthTotals: Record<MonthKey, number>;
   warnings: string[];
 }
+
+/**
+ * Paying money into an investment platform is saving, not discretionary spending — but it
+ * appears in a Pot export as an ordinary card payment, and one such transfer distorted a
+ * month by £1,670 during testing.
+ */
+export const INVESTMENT_PAYEES = [
+  'trading 212',
+  'trading212',
+  'vanguard',
+  'freetrade',
+  'invest engine',
+  'investengine',
+  'moneybox',
+  'nutmeg',
+  'hargreaves',
+  'chip',
+  'plum',
+];
 
 /** Categories that are never guilt-free spending. */
 export const DEFAULT_EXCLUDED_CATEGORIES = [
@@ -83,12 +111,24 @@ const toAmount = (raw: string): number | undefined => {
 };
 
 const POT = /\bpot\b/i;
+const isInvestmentPayee = (name: string) =>
+  INVESTMENT_PAYEES.some((p) => name.toLowerCase().includes(p));
 
 export function parseMonzoCsv(text: string): MonzoParseResult {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   const warnings: string[] = [];
   if (lines.length < 2) {
-    return { rows: [], categories: [], potTransferTotal: 0, potTransferCount: 0, months: [], warnings: ['That file has no rows in it.'] };
+    return {
+      rows: [],
+      categories: [],
+      potTransferTotal: 0,
+      potTransferCount: 0,
+      investmentTotal: 0,
+      investmentCount: 0,
+      months: [],
+      monthTotals: {},
+      warnings: ['That file has no rows in it.'],
+    };
   }
 
   const header = splitCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/^"|"$/g, ''));
@@ -115,7 +155,10 @@ export function parseMonzoCsv(text: string): MonzoParseResult {
       categories: [],
       potTransferTotal: 0,
       potTransferCount: 0,
+      investmentTotal: 0,
+      investmentCount: 0,
       months: [],
+      monthTotals: {},
       warnings: [
         'This does not look like a Monzo CSV export — no Date and Amount columns were found. In the Monzo app: Account → Statements → Export as CSV.',
       ],
@@ -155,11 +198,13 @@ export function parseMonzoCsv(text: string): MonzoParseResult {
       description: [name, desc].filter(Boolean).find(Boolean) || 'Spend',
       category,
       isPotTransfer: POT.test(type) || POT.test(name) || POT.test(category) || POT.test(desc),
+      isInvestment: isInvestmentPayee(name) || isInvestmentPayee(desc),
     });
   });
 
   const potRows = rows.filter((r) => r.isPotTransfer);
-  const spendRows = rows.filter((r) => !r.isPotTransfer);
+  const investmentRows = rows.filter((r) => !r.isPotTransfer && r.isInvestment);
+  const spendRows = rows.filter((r) => !r.isPotTransfer && !r.isInvestment);
 
   const totals = new Map<string, { total: number; count: number }>();
   for (const r of spendRows) {
@@ -171,8 +216,21 @@ export function parseMonzoCsv(text: string): MonzoParseResult {
   if (skippedIncoming > 0) warnings.push(`${skippedIncoming} incoming payment${skippedIncoming === 1 ? '' : 's'} ignored — only money out counts as spending.`);
   if (potRows.length > 0) {
     warnings.push(
-      `${potRows.length} Pot transfer${potRows.length === 1 ? '' : 's'} excluded. Moving money into a Pot is not spending — and anything you spent *directly from* a Pot is not in this file at all, because Monzo does not put Pot transactions in the export. Log those by hand.`,
+      `${potRows.length} Pot transfer${potRows.length === 1 ? '' : 's'} excluded — moving money between Pots is not spending. Card payments made from a Pot are kept.`,
     );
+  }
+
+  if (investmentRows.length > 0) {
+    const total = round2(investmentRows.reduce((a, r) => a + r.amount, 0));
+    warnings.push(
+      `£${total.toFixed(2)} paid to ${[...new Set(investmentRows.map((r) => r.description))].join(', ')} treated as saving, not spending, and left out.`,
+    );
+  }
+
+  const monthTotals: Record<MonthKey, number> = {};
+  for (const r of spendRows) {
+    const m = r.date.slice(0, 7);
+    monthTotals[m] = round2((monthTotals[m] ?? 0) + r.amount);
   }
 
   return {
@@ -182,9 +240,31 @@ export function parseMonzoCsv(text: string): MonzoParseResult {
       .sort((a, b) => b.total - a.total),
     potTransferTotal: round2(potRows.reduce((a, r) => a + r.amount, 0)),
     potTransferCount: potRows.length,
+    investmentTotal: round2(investmentRows.reduce((a, r) => a + r.amount, 0)),
+    investmentCount: investmentRows.length,
     months: [...new Set(spendRows.map((r) => r.date.slice(0, 7)))].sort(),
+    monthTotals,
     warnings,
   };
+}
+
+/** Every month in the file at once, so a year of history lands in one go. */
+export function rowsToSpendsByMonth(
+  rows: MonzoRow[],
+  includedCategories: Set<string>,
+): Record<MonthKey, SpendEntry[]> {
+  const out: Record<MonthKey, SpendEntry[]> = {};
+  for (const r of rows) {
+    if (!includedCategories.has(r.category)) continue;
+    const m = r.date.slice(0, 7);
+    (out[m] ??= []).push({
+      id: `monzo-${r.id}`,
+      date: r.date,
+      amount: r.amount,
+      note: r.description,
+    });
+  }
+  return out;
 }
 
 /** Rows for one month, in the categories you kept, as spend-log entries. */

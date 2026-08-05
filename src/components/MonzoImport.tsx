@@ -6,6 +6,7 @@ import {
   mergeSpends,
   parseMonzoCsv,
   rowsToSpends,
+  rowsToSpendsByMonth,
   type MonzoParseResult,
 } from '../monzoCsv';
 import { useStore } from '../store';
@@ -17,11 +18,13 @@ import type { MonthKey } from '../types';
  * spending and is already budgeted elsewhere in the plan.
  */
 export function MonzoImport({ month }: { month: MonthKey }) {
-  const { updateMonth, state } = useStore();
+  const { updateMonth } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [parsed, setParsed] = useState<MonzoParseResult | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
   const [target, setTarget] = useState<MonthKey>(month);
+  // A year of history in one go is what makes the forecast worth trusting.
+  const [allMonths, setAllMonths] = useState(true);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,23 +50,36 @@ export function MonzoImport({ month }: { month: MonthKey }) {
     }
   };
 
-  const preview = useMemo(
-    () => (parsed ? rowsToSpends(parsed.rows, target, included) : []),
-    [parsed, target, included],
+  const byMonth = useMemo(
+    () => (parsed && allMonths ? rowsToSpendsByMonth(parsed.rows, included) : null),
+    [parsed, allMonths, included],
   );
-  const previewTotal = preview.reduce((a, s) => a + s.amount, 0);
+  const preview = useMemo(
+    () => (parsed && !allMonths ? rowsToSpends(parsed.rows, target, included) : []),
+    [parsed, allMonths, target, included],
+  );
+  const previewCount = byMonth
+    ? Object.values(byMonth).reduce((a, s) => a + s.length, 0)
+    : preview.length;
+  const previewTotal = byMonth
+    ? Object.values(byMonth).flat().reduce((a, s) => a + s.amount, 0)
+    : preview.reduce((a, s) => a + s.amount, 0);
 
   const apply = () => {
     let added = 0;
     let skipped = 0;
-    updateMonth(target, (e) => {
-      const result = mergeSpends(e.spends ?? [], preview);
-      added = result.added;
-      skipped = result.skipped;
-      return { ...e, spends: result.merged };
-    });
+    const months = byMonth ?? { [target]: preview };
+    for (const [m, spends] of Object.entries(months)) {
+      updateMonth(m, (e) => {
+        const result = mergeSpends(e.spends ?? [], spends);
+        added += result.added;
+        skipped += result.skipped;
+        return { ...e, spends: result.merged };
+      });
+    }
+    const count = Object.keys(months).length;
     setDone(
-      `Added ${added} spend${added === 1 ? '' : 's'} to ${monthLabel(target, true)}${
+      `Added ${added} spend${added === 1 ? '' : 's'} across ${count} month${count === 1 ? '' : 's'}${
         skipped > 0 ? `, skipping ${skipped} already imported` : ''
       }.`,
     );
@@ -113,20 +129,51 @@ export function MonzoImport({ month }: { month: MonthKey }) {
           ))}
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <span>Import into</span>
-              <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ width: 'auto' }}>
-                {[...new Set([...parsed.months, month])].sort().map((m) => (
-                  <option key={m} value={m}>
-                    {monthLabel(m, true)}
-                  </option>
-                ))}
-              </select>
+            <label style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 13 }}>
+              <input
+                type="checkbox"
+                style={{ width: 'auto', minHeight: 0 }}
+                checked={allMonths}
+                onChange={(e) => setAllMonths(e.target.checked)}
+              />
+              Import all {parsed.months.length} month{parsed.months.length === 1 ? '' : 's'} in the file
             </label>
-            <span className="card-sub">
-              file covers {parsed.months.map((m) => monthLabel(m)).join(', ')}
-            </span>
+            {!allMonths && (
+              <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <span>into</span>
+                <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ width: 'auto' }}>
+                  {[...new Set([...parsed.months, month])].sort().map((m) => (
+                    <option key={m} value={m}>
+                      {monthLabel(m, true)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
+
+          {allMonths && (
+            <div className="table-scroll" style={{ maxHeight: 190, overflowY: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Spends</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.months.map((m) => (
+                    <tr key={m}>
+                      <td>{monthLabel(m, true)}</td>
+                      <td>{byMonth?.[m]?.length ?? 0}</td>
+                      <td>{money((byMonth?.[m] ?? []).reduce((a, s) => a + s.amount, 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div>
             <div className="card-sub" style={{ marginBottom: 6 }}>
@@ -148,15 +195,17 @@ export function MonzoImport({ month }: { month: MonthKey }) {
           </div>
 
           <div className="callout">
-            {preview.length} spend{preview.length === 1 ? '' : 's'} totalling{' '}
-            <strong>{money(previewTotal)}</strong> will be added to {monthLabel(target, true)}.
-            {(state.months[target]?.spends?.length ?? 0) > 0 &&
-              ' Anything already imported from this file is skipped.'}
+            {previewCount} spend{previewCount === 1 ? '' : 's'} totalling{' '}
+            <strong>{money(previewTotal)}</strong> will be added
+            {allMonths
+              ? ` across ${parsed.months.length} month${parsed.months.length === 1 ? '' : 's'}`
+              : ` to ${monthLabel(target, true)}`}
+            . Anything already imported is skipped, and entries you typed yourself are left alone.
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn primary" onClick={apply} disabled={preview.length === 0}>
-              Import {preview.length} spend{preview.length === 1 ? '' : 's'}
+            <button className="btn primary" onClick={apply} disabled={previewCount === 0}>
+              Import {previewCount} spend{previewCount === 1 ? '' : 's'}
             </button>
             <button className="btn ghost" onClick={() => setParsed(null)}>
               Cancel

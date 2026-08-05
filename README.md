@@ -132,13 +132,27 @@ Three ways, switchable at any time on the card:
   off by default because the plan budgets them elsewhere. Re-importing the same file adds
   nothing twice, and hand-typed entries are never touched.
 
+### The History page
+
+Reads whatever is in your spend logs and reports what the plan's figures *should* be set
+from: what each month actually cost against the budget, the spread between your cheapest and
+dearest month, how your days fall (quiet days, typical spend day, and the percentiles above
+it), and the day-of-week pattern. Where the budget and the evidence disagree by more than
+£20, it says so and offers to set the budget to the evidence.
+
+Import is per-file, not per-month: a year of Monzo history lands in one go, split into a log
+per month, which is what makes the forecast trustworthy from day one rather than after a
+fortnight of logging.
+
 ### Why Monzo is not connected directly
 
-Checked, and it does not work — for three separate reasons:
+The **per-Pot CSV export** — taken from inside the Pot in the Monzo app — *does* contain the
+card payments made from that Pot. That is the file to import for a spending Pot, and it is
+the one route that sees Pot spending at all. What follows is why nothing automatic does:
 
-1. **Pot transactions are not exposed.** The API returns Pot balances and lets you deposit
-   and withdraw, but not what happened inside a Pot. If a Pot is set as your card's spending
-   source, those payments cannot be read. This is a long-standing, acknowledged gap.
+1. **Pot transactions are not exposed to the API.** It returns Pot balances and lets you
+   deposit and withdraw, but not what happened inside a Pot. This is a long-standing,
+   acknowledged gap — and it is why the manual per-Pot export is the only route.
    ([Monzo docs](https://docs.monzo.com/), [community request](https://community.monzo.com/t/expose-pot-transaction-data-via-public-api-parity-with-main-account-transactions/193089))
 2. **The developer API is not for apps.** Monzo states it "is not suitable for building
    public applications" — own account or a small whitelist only. It also needs a client
@@ -150,14 +164,16 @@ Checked, and it does not work — for three separate reasons:
    stopped onboarding new customers.
    ([aggregator list](https://www.openbankingtracker.com/provider/monzo))
 
-The CSV export has the same blind spot: payments made **directly from a Pot** are missing
-from it, as they are from Monzo's own Plus auto-export.
+The **main-account** CSV has the same blind spot as the API: payments made directly from a
+Pot are missing from it, as they are from Monzo's own Plus auto-export.
 ([community](https://community.monzo.com/t/auto-export-transactions-that-are-made-directly-from-pots/124567))
-Pot transfers that do appear are detected and excluded, since moving money into a Pot is not
-spending.
+The per-Pot export is the workaround, and it is manual — a file you take from the app each
+month, not a connection.
 
-So: if guilt-free money is spent from the **main balance**, the CSV import covers it. If it
-is spent **from a Pot**, no integration can see it and it has to be logged by hand.
+Whichever file you use, transfers between Pots are detected and excluded (moving money is not
+spending), and so are payments to investment platforms — Trading 212, Vanguard, Moneybox and
+the like. A single £1,670 transfer to Trading 212 sitting in a spending export otherwise
+reads as the most expensive month of the year.
 
 ## How a month is calculated
 
