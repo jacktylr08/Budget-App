@@ -135,7 +135,8 @@ Three ways, switchable at any time on the card:
 ### The History page
 
 Reads whatever is in your spend logs and reports what the plan's figures *should* be set
-from: what each month actually cost against the budget, the spread between your cheapest and
+from. It windows to the last 12 months by default — a five-year export otherwise drowns the
+recent signal — with 6-month, 2-year and everything options. It shows: what each month actually cost against the budget, the spread between your cheapest and
 dearest month, how your days fall (quiet days, typical spend day, and the percentiles above
 it), and the day-of-week pattern. Where the budget and the evidence disagree by more than
 £20, it says so and offers to set the budget to the evidence.
@@ -143,6 +144,12 @@ it), and the day-of-week pattern. Where the budget and the evidence disagree by 
 Import is per-file, not per-month: a year of Monzo history lands in one go, split into a log
 per month, which is what makes the forecast trustworthy from day one rather than after a
 fortnight of logging.
+
+**Import every account you spend from.** A spending Pot usually holds only part of the
+picture — day-to-day spending that runs through the main balance is invisible if you import
+the Pot alone, and a budget set from the Pot alone will be set far too low. Transaction IDs
+are unique, so importing the main account and a Pot adds them together rather than
+double-counting.
 
 ### Why Monzo is not connected directly
 

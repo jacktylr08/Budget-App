@@ -61,16 +61,28 @@ export const INVESTMENT_PAYEES = [
   'plum',
 ];
 
-/** Categories that are never guilt-free spending. */
+/**
+ * Categories that are not guilt-free spending, and so are off by default.
+ *
+ * Two groups: money the plan budgets elsewhere (rent, bills, transfers, savings), and
+ * lumpy things the plan funds from a sinking fund rather than the monthly budget
+ * (holidays, events, car repairs). All of them can be switched back on per import.
+ */
 export const DEFAULT_EXCLUDED_CATEGORIES = [
   'transfers',
+  'transfer',
   'savings',
+  'investment',
   'income',
   'bills',
   'finances',
   'rent',
   'mortgage',
-  'transfer',
+  'subscriptions',
+  'holidays',
+  'holiday spending',
+  'events',
+  'car repairs',
 ];
 
 /** Splits a CSV line, honouring quoted fields that contain commas. */

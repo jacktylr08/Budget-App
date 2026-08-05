@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -25,9 +25,10 @@ import { Card, Stat } from './ui';
 export function History() {
   const { state, updateConfig } = useStore();
   const colors = useThemeColors();
+  const [windowMonths, setWindowMonths] = useState(12);
   const h = useMemo(
-    () => summariseHistory(state, state.config.bigNightThreshold),
-    [state],
+    () => summariseHistory(state, state.config.bigNightThreshold, new Date(), windowMonths),
+    [state, windowMonths],
   );
   const budget = state.config.defaultGuiltFree;
 
@@ -54,6 +55,27 @@ export function History() {
 
   return (
     <>
+      <div className="chip-row" style={{ marginBottom: 14 }}>
+        {[
+          [6, 'Last 6 months'],
+          [12, 'Last 12 months'],
+          [24, 'Last 2 years'],
+          [0, 'Everything'],
+        ].map(([m, label]) => (
+          <button
+            key={m as number}
+            className="chip"
+            aria-pressed={windowMonths === m}
+            onClick={() => setWindowMonths(m as number)}
+          >
+            {label as string}
+          </button>
+        ))}
+        <span className="card-sub" style={{ alignSelf: 'center' }}>
+          {h.availableMonths} months logged
+        </span>
+      </div>
+
       <div className="grid cols-4" style={{ marginBottom: 14 }}>
         <Stat
           label="Typical month"

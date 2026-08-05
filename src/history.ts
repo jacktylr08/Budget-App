@@ -50,6 +50,10 @@ export interface HistorySummary {
   /** Suggested budget: the recent median rounded up, with a little headroom. */
   suggestedBudget: number;
   hasEnoughData: boolean;
+  /** Months of history the summary covers. */
+  windowMonths: number;
+  /** Months available in the logs, whatever the window. */
+  availableMonths: number;
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -71,10 +75,15 @@ export function summariseHistory(
   state: AppState,
   bigNightThreshold = 50,
   now = new Date(),
+  /** How far back to read. A five-year export would otherwise drown the recent signal. */
+  windowMonths = 12,
 ): HistorySummary {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - windowMonths + 1, 1);
+  const earliest = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}`;
 
   const months: MonthTotal[] = Object.values(state.months)
+    .filter((e) => windowMonths <= 0 || e.month >= earliest)
     .filter((e) => (e.spends?.length ?? 0) > 0)
     .map((e) => {
       const spends = e.spends ?? [];
@@ -159,5 +168,7 @@ export function summariseHistory(
     // Round up to the nearest £25 so the budget is a number you can hold in your head.
     suggestedBudget: recentMedian > 0 ? Math.ceil((recentMedian * 1.05) / 25) * 25 : 0,
     hasEnoughData: completeMonths.length >= 3,
+    windowMonths,
+    availableMonths: Object.values(state.months).filter((e) => (e.spends?.length ?? 0) > 0).length,
   };
 }
