@@ -8,6 +8,10 @@ with anything left spilling into savings.
 Everything runs in the browser. There is no server and no account; the plan is stored in
 `localStorage` and can be exported to a JSON file at any time.
 
+It is built for a phone as much as a laptop: bottom navigation within thumb reach, sections
+that collapse instead of forming an endless column, the plan as a list of months rather than
+a grid dragged sideways, and no horizontal page scrolling anywhere.
+
 ## Running it
 
 ```bash
@@ -74,35 +78,47 @@ Apply.
 
 ## Spending this month
 
-The guilt-free budget gets its own card, because a single running total cannot answer the
-question that actually matters mid-month: *I spent £100 on the first Saturday — am I in
-trouble?*
+The first thing on the month page, because it is the thing checked most often. It answers
+the question that actually causes stress mid-month — *I spent £100 on the first Saturday, am
+I in trouble?* — and the honest answer is a range with odds attached, not a number.
 
-Log spends as they happen (date, amount, note). Anything at or above the "a night out costs
-at least" threshold in Settings is classed as a **big night** and kept separate from
-**everyday spending**, which is what makes the projections trustworthy:
+### The forecast
 
-- **Everyday spending only** — your day-to-day rate carried to month end, assuming no more
-  big nights. This is the headline run-out date, because it is the one you control by
-  changing habits rather than cancelling plans.
-- **Out every Fri/Sat** — everyday spending plus a night out on every remaining Friday and
-  Saturday at their typical cost. A ceiling, not a forecast.
+Real months are mostly quiet days with a few £50 ones, so no single projected line can
+describe them. Instead the rest of the month is **simulated**: days are drawn at random from
+the days you have actually had — zeros included — and the month is replayed a couple of
+thousand times. Fridays and Saturdays are drawn from your own Fridays and Saturdays, once
+there are enough of them to mean something.
 
-Spending is lumpy — most days are nothing, some days are £20 — so it is never described as
-a flat daily rate. The pattern is measured as **how often you spend and how much when you
-do** ("about 1 day in 3, £18 a time"), and projected forward as whole spend days. A "big
-night" is a **day** whose total clears the threshold, not a single payment, because a night
-out is a bar, a taxi and a kebab rather than one transaction.
+That produces the four figures at the top of the card:
 
-A naive daily average is deliberately not used anywhere. Two days into a month, one £100
-night averages to £58 a day and predicts disaster; that number is noise, and acting on it is
-what makes an ordinary Saturday feel like a crisis.
+| Figure | What it is |
+|---|---|
+| **Left to spend** | Budget minus what has gone. |
+| **Heading for** | Where the month lands in the middle of the simulations. |
+| **Chance of staying in** | Share of simulated months that finish at or under budget. |
+| **Safe per day** | What is left spread evenly — an average, labelled as one. |
 
-The card also gives the safe daily allowance from today, how many more nights out fit inside
-what is left, how many no-spend days would put you back on the pace line, and how many
-Friday/Saturday nights remain to spread it across. Underneath, up to four tips translate
-those figures into a decision. When the budget is gone they point the damage at the debt and
-spillover line rather than at savings, in line with the rules.
+Under them, **what that covers**, in the shape a month really takes: *21 quiet days, 5 days
+at ~£20, 4 nights out*. Nights out are capped at the number of Fridays and Saturdays actually
+left, because you cannot have seven of them in six weekends.
+
+The chart shows what has been spent, then a shaded band for the middle 80% of simulated
+outcomes. The band widens exactly as far as your own variation justifies — no further.
+
+Two things this deliberately does **not** do:
+
+- **No invented worst case.** An earlier version showed "out every Friday and Saturday",
+  which produced numbers like £1,500 on a £575 budget. It was arithmetically true and
+  completely useless.
+- **No straight-line scolding.** The verdict badge comes from the odds, not from whether
+  today sits above an even-pace line. One big night on the 1st puts you "over pace" for a
+  fortnight while the month is, in fact, fine.
+
+A "big night" is a **day** whose total clears the threshold in Settings, not a single
+payment — a night out is a bar, a taxi and a kebab. When this month is only a few days old,
+earlier months' logs are used as the sample, and the card says so rather than pretending to
+precision it has not earned.
 
 ### Logging it
 
@@ -181,7 +197,9 @@ each fund balance, the debt waterfall, spillover, and net position — for all e
 `src/payslip.test.ts` covers the parser against typical payslip layouts. `src/spending.test.ts`
 covers the projections — including the first-Saturday big night, lumpy spending with no-spend
 days, and a night out spread across six transactions. `src/monzoCsv.test.ts` covers the
-import, including Pot exclusion and re-import safety.
+import, including Pot exclusion and re-import safety. `src/forecast.test.ts` covers the
+simulation — that it is deterministic, that it keeps ranges plausible, and that it borrows
+earlier months when this one is too young.
 
 ## Where the data lives
 

@@ -36,10 +36,16 @@ export function Dashboard({ onOpenMonth }: { onOpenMonth: (m: MonthKey) => void 
         spends: state.months[current]?.spends ?? [],
         fallbackTotal: state.months[current]?.actualGuiltFree ?? 0,
         bigNightThreshold: state.config.bigNightThreshold,
+        history: Object.values(state.months)
+          .filter((e) => e.month < current && (e.spends?.length ?? 0) > 0)
+          .map((e) => ({ month: e.month, spends: e.spends ?? [] })),
       })
     : undefined;
+  // Only speak up when the odds are genuinely against the month, not on every wobble.
   const spendingAlert =
-    spending && (spending.status === 'spent-up' || spending.projectionEveryday.runOutDay !== undefined);
+    spending &&
+    (spending.status === 'spent-up' ||
+      (spending.daysLeft > 0 && !spending.forecast.thin && spending.forecast.probabilityWithinBudget < 0.5));
 
   return (
     <>
@@ -85,10 +91,11 @@ export function Dashboard({ onOpenMonth }: { onOpenMonth: (m: MonthKey) => void 
                       current,
                       spending.ranOutOnDay!,
                     )}, ${money(Math.abs(spending.remaining))} over with ${spending.daysLeft} days left.`
-                  : `At ${money(spending.everydayRate)} a day of everyday spending, ${now.label}'s guilt-free budget runs out on the ${formatDayOfMonth(
-                      current,
-                      spending.projectionEveryday.runOutDay!,
-                    )}.`}{' '}
+                  : `${now.label}'s guilt-free spending is heading for ${money(
+                      spending.forecast.median,
+                    )} against a ${money(spending.budget)} budget — a ${Math.round(
+                      spending.forecast.probabilityWithinBudget * 100,
+                    )}% chance of staying inside it.`}{' '}
                 <button className="btn ghost sm" onClick={() => onOpenMonth(current)}>
                   Open the month →
                 </button>

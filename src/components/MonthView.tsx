@@ -3,9 +3,10 @@ import { addMonths, currentMonthKey, monthLabel } from '../engine';
 import { money } from '../format';
 import { useStore } from '../store';
 import { useThemeColors } from '../charts/Charts';
+import { useIsMobile } from '../useMediaQuery';
 import { PayslipImport } from './PayslipImport';
 import { SpendingCard } from './SpendingCard';
-import { Badge, Card, Field, Money, MoneyInput } from './ui';
+import { Badge, Collapsible, Field, Money, MoneyInput } from './ui';
 import type { MonthKey, MonthResult } from '../types';
 
 export function MonthView({
@@ -17,6 +18,7 @@ export function MonthView({
 }) {
   const { state, plan, months, updateMonth } = useStore();
   const colors = useThemeColors();
+  const isMobile = useIsMobile();
   const result = plan.find((m) => m.month === month);
   const entry = state.months[month];
   const cfg = state.config;
@@ -75,8 +77,9 @@ export function MonthView({
             >
               →
             </button>
-            {isCurrent && <Badge tone="neutral">this month</Badge>}
-            {result.hasPayslip ? <Badge tone="good">payslip imported</Badge> : <Badge>planned</Badge>}
+            {isCurrent && !isMobile && <Badge tone="neutral">this month</Badge>}
+            {!isMobile &&
+              (result.hasPayslip ? <Badge tone="good">payslip imported</Badge> : <Badge>planned</Badge>)}
             {Math.abs(result.balanceCheck) > 0.005 ? (
               <Badge tone="bad">does not balance</Badge>
             ) : result.available < 0 ? (
@@ -90,22 +93,34 @@ export function MonthView({
           </p>
         </div>
         <div className="spacer" />
-        <div className="chip-row">
-          {months.map((m) => (
-            <button key={m} className="chip" aria-pressed={m === month} onClick={() => setMonth(m)}>
-              {monthLabel(m)}
-            </button>
-          ))}
-        </div>
+        {!isMobile && (
+          <div className="chip-row">
+            {months.map((m) => (
+              <button key={m} className="chip" aria-pressed={m === month} onClick={() => setMonth(m)}>
+                {monthLabel(m)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="grid cols-2">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Card title="Import payslip" sub="Drop it in and the income lines fill themselves">
-            <PayslipImport month={month} onApplied={setMonth} />
-          </Card>
+      <SpendingCard month={month} result={result} />
 
-          <Card title="Income" sub={result.hasPayslip ? 'From your payslip' : 'Planned figures'}>
+      <div className="grid cols-2" style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Collapsible
+            title="Import payslip"
+            sub="Drop it in and the income lines fill themselves"
+            summary={result.hasPayslip ? 'imported' : 'not yet'}
+          >
+            <PayslipImport month={month} onApplied={setMonth} />
+          </Collapsible>
+
+          <Collapsible
+            title="Income"
+            sub={result.hasPayslip ? 'From your payslip' : 'Planned figures'}
+            summary={money(result.net)}
+          >
             <div className="grid cols-2" style={{ gap: 10 }}>
               {(
                 [
@@ -151,9 +166,13 @@ export function MonthView({
                 <strong>{money(result.net)}</strong>
               </dd>
             </dl>
-          </Card>
+          </Collapsible>
 
-          <Card title="Fixed costs" sub={`${money(result.fixedTotal)} this month`}>
+          <Collapsible
+            title="Fixed costs"
+            sub={`${money(result.fixedTotal)} this month`}
+            summary={money(result.fixedTotal)}
+          >
             {cfg.fixedCosts
               .filter((l) => !l.archived)
               .map((line) => {
@@ -181,11 +200,12 @@ export function MonthView({
                   </div>
                 );
               })}
-          </Card>
+          </Collapsible>
 
-          <Card
+          <Collapsible
             title="One-off costs"
             sub="Anything that only happens this month"
+            summary={money(result.oneOffTotal)}
             actions={
               <button
                 className="btn sm"
@@ -235,13 +255,15 @@ export function MonthView({
                 </button>
               </div>
             ))}
-          </Card>
+          </Collapsible>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <SpendingCard month={month} result={result} />
-
-          <Card title="Allocation" sub={`Every penny of ${money(result.net)}`}>
+          <Collapsible
+            title="Allocation"
+            sub={`Every penny of ${money(result.net)}`}
+            summary={`${money(result.net)} allocated`}
+          >
             <div className="waterfall">
               {steps.map((s) => (
                 <React.Fragment key={s.name}>
@@ -274,9 +296,12 @@ export function MonthView({
                 contribution or a one-off — do not let it fall through to next month.
               </div>
             )}
-          </Card>
+          </Collapsible>
 
-          <Card title="Balances at the end of the month">
+          <Collapsible
+            title="Balances at the end of the month"
+            summary={money(result.netPosition, { decimals: false })}
+          >
             <dl className="kv">
               <dt>{cfg.savingsAccountName}</dt>
               <dd>
@@ -312,16 +337,16 @@ export function MonthView({
                 </strong>
               </dd>
             </dl>
-          </Card>
+          </Collapsible>
 
-          <Card title="Notes">
+          <Collapsible title="Notes" summary={entry?.notes ? 'written' : 'empty'}>
             <textarea
               rows={4}
               placeholder="What happened this month, and what you decided to do about it."
               value={entry?.notes ?? ''}
               onChange={(e) => updateMonth(month, (x) => ({ ...x, notes: e.target.value }))}
             />
-          </Card>
+          </Collapsible>
         </div>
       </div>
     </>

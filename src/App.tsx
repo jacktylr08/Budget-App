@@ -2,21 +2,23 @@ import { useEffect, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { MonthView } from './components/MonthView';
 import { PlanGrid } from './components/PlanGrid';
+import { PlanList } from './components/PlanList';
 import { Rules } from './components/Rules';
 import { Settings } from './components/Settings';
 import { currentMonthKey } from './engine';
 import { setMoneyFormat } from './format';
 import { StoreProvider, useStore } from './store';
+import { useIsMobile } from './useMediaQuery';
 import type { MonthKey } from './types';
 
 type Tab = 'dashboard' | 'month' | 'plan' | 'rules' | 'settings';
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'month', label: 'This month' },
-  { id: 'plan', label: 'Plan' },
-  { id: 'rules', label: 'Rules' },
-  { id: 'settings', label: 'Settings' },
+const TABS: Array<{ id: Tab; label: string; short: string; icon: string }> = [
+  { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: '◈' },
+  { id: 'month', label: 'This month', short: 'Month', icon: '◑' },
+  { id: 'plan', label: 'Plan', short: 'Plan', icon: '☰' },
+  { id: 'rules', label: 'Rules', short: 'Rules', icon: '§' },
+  { id: 'settings', label: 'Settings', short: 'Setup', icon: '⚙' },
 ];
 
 function useTheme() {
@@ -39,6 +41,7 @@ function Shell() {
     return now;
   });
   const { theme, setTheme } = useTheme();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     setMoneyFormat(state.config.locale, state.config.currency);
@@ -64,17 +67,19 @@ function Shell() {
           <span className="brand-mark">£</span>
           Budget
         </div>
-        <nav className="nav">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              aria-current={tab === t.id ? 'page' : undefined}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        {!isMobile && (
+          <nav className="nav">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                aria-current={tab === t.id ? 'page' : undefined}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        )}
         <div className="topbar-right">
           <button
             className="btn ghost sm"
@@ -110,12 +115,13 @@ function Shell() {
               <div>
                 <h1>Plan</h1>
                 <p>
-                  The whole plan in one grid. Type in any cell to change that month only — blue
-                  figures are overrides, grey ones come from the defaults in Settings.
+                  {isMobile
+                    ? 'Every month of the plan. Tap one to see where its money goes.'
+                    : 'The whole plan in one grid. Type in any cell to change that month only — blue figures are overrides, grey ones come from the defaults in Settings.'}
                 </p>
               </div>
             </div>
-            <PlanGrid onOpenMonth={openMonth} />
+            {isMobile ? <PlanList onOpenMonth={openMonth} /> : <PlanGrid onOpenMonth={openMonth} />}
           </>
         )}
 
@@ -143,6 +149,26 @@ function Shell() {
           </>
         )}
       </main>
+
+      {isMobile && (
+        <nav className="bottom-nav" aria-label="Sections">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => {
+                setTab(t.id);
+                window.scrollTo({ top: 0 });
+              }}
+              aria-current={tab === t.id ? 'page' : undefined}
+            >
+              <span className="bottom-nav-icon" aria-hidden="true">
+                {t.icon}
+              </span>
+              {t.short}
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

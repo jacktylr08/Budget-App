@@ -22,22 +22,21 @@ describe('the early big night', () => {
 
   it('does not claim the money runs out early', () => {
     // A naive £100/5 days = £20/day average would predict running out on the 28th.
-    // Everyday spending is actually zero, so the realistic projection never runs out.
-    expect(a.projectionEveryday.runOutDay).toBeUndefined();
-    expect(a.projectionEveryday.endOfMonthTotal).toBe(100);
+    // Only 1 of the 5 days had any spending, so a resampled month rarely repeats it.
+    expect(a.forecast.median).toBeLessThan(575);
+    expect(a.forecast.probabilityWithinBudget).toBeGreaterThan(0.5);
   });
 
-  it('still shows the ceiling if every remaining weekend were a big night', () => {
-    // 8 Fri/Sat nights left in August 2026 from the 5th, at £100 each, on £475 left.
+  it('gives a range rather than a single number', () => {
+    expect(a.forecast.low).toBeLessThanOrEqual(a.forecast.median);
+    expect(a.forecast.median).toBeLessThanOrEqual(a.forecast.high);
     expect(a.weekendNightsLeft).toBe(8);
-    expect(a.projectionEveryWeekend.runOutDay).toBeDefined();
-    expect(a.projectionEveryWeekend.endOfMonthTotal).toBe(900);
   });
 
   it('separates the big night from everyday spending', () => {
     expect(a.bigNights).toHaveLength(1);
     expect(a.everydaySpent).toBe(0);
-    expect(a.everydayRate).toBe(0);
+    expect(a.spendDays).toBe(0);
   });
 
   it('reports what is left per day and how many more nights fit', () => {
@@ -61,10 +60,11 @@ describe('steady overspending', () => {
   );
   const a = analyse(spends, 10);
 
-  it('projects a run-out date before the month ends', () => {
-    // £300 spent, £275 left, £30/day of everyday spending -> day 19.
-    expect(a.projectionEveryday.runOutDay).toBe(19);
-    expect(a.tips.some((t) => t.id === 'run-out-warning')).toBe(true);
+  it('is near certain to blow the budget, and says when', () => {
+    // £300 spent by day 10 and every single day has cost £30.
+    expect(a.forecast.probabilityWithinBudget).toBe(0);
+    expect(a.forecast.likelyRunOutDay).toBe(20);
+    expect(a.tips.some((t) => t.id === 'run-out')).toBe(true);
   });
 
   it('flags it as over pace and quantifies the cut needed', () => {
@@ -72,6 +72,7 @@ describe('steady overspending', () => {
     expect(a.dailyAllowance).toBe(13.1);
     expect(a.tips.some((t) => t.id === 'over-pace')).toBe(true);
     expect(a.tips.find((t) => t.id === 'over-pace')!.title).toContain('£13.10');
+    expect(a.tips.find((t) => t.id === 'over-pace')!.body).toMatch(/Averages are not how you spend/);
   });
 
   it('says how many no-spend days recover the pace line', () => {
@@ -120,7 +121,8 @@ describe('on track', () => {
   it('says so without inventing a problem', () => {
     expect(a.status).toBe('under-pace');
     expect(a.tips.some((t) => t.tone === 'bad' || t.tone === 'warn')).toBe(false);
-    expect(a.tips.find((t) => t.id === 'on-track')!.body).toMatch(/budget is there to be spent/i);
+    expect(a.tips.find((t) => t.id === 'odds')!.title).toMatch(/chance you finish inside the budget/i);
+    expect(a.tips.find((t) => t.id === 'odds')!.body).toMatch(/Nothing needs fixing/i);
   });
 });
 
@@ -129,7 +131,10 @@ describe('weekend awareness', () => {
     // From the 12th, August 2026 has Fri/Sat on 14,15,21,22,28,29.
     const a = analyse([spend('2026-08-03', 40)], 12);
     expect(a.weekendNightsLeft).toBe(6);
-    expect(a.tips.some((t) => t.id === 'weekend-plan')).toBe(true);
+    const shapeTip = a.tips.find((t) => t.id === 'shape')!;
+    expect(shapeTip.body).toMatch(/6 Friday and Saturday nights left/);
+    // Never offers more nights out than there are weekends to have them on.
+    expect(a.shape.bigNights).toBeLessThanOrEqual(a.weekendNightsLeft);
   });
 });
 
@@ -161,8 +166,8 @@ describe('inputs and edges', () => {
 
   it('never divides by zero on the first day of the month', () => {
     const a = analyse([spend('2026-08-01', 100)], 1);
-    expect(Number.isFinite(a.everydayRate)).toBe(true);
     expect(Number.isFinite(a.dailyAllowance)).toBe(true);
+    expect(Number.isFinite(a.forecast.median)).toBe(true);
   });
 
   it('builds a cumulative series that stops at today', () => {
@@ -199,39 +204,39 @@ describe('lumpy spending, not a flat daily rate', () => {
     expect(a.spendDays).toBe(4);
     expect(a.noSpendDays).toBe(8);
     expect(a.typicalSpendDay).toBe(20); // median of 15, 18, 22, 25
-    expect(a.spendDayFrequency).toBeCloseTo(1 / 3, 2);
+    expect(a.forecast.quietDayShare).toBeCloseTo(2 / 3, 1);
   });
 
-  it('projects whole spend days ahead, not fractions of a day', () => {
-    // One day in three across the 19 days left is about 6 more spend days at £20.
-    expect(a.expectedSpendDaysLeft).toBe(6);
-    expect(a.projectedEverydayRemaining).toBe(120);
-    expect(a.projectionEveryday.endOfMonthTotal).toBe(200);
+  it('describes what is left as days, not as a rate', () => {
+    // One day in three across the 19 days left: about 6 spend days and 13 quiet ones.
+    expect(a.shape.spendDays).toBe(6);
+    expect(a.shape.quietDays).toBe(13);
+    expect(a.forecast.quietDayShare).toBeCloseTo(0.67, 1);
   });
 
   it('describes the pattern in the tips instead of a fictional daily figure', () => {
-    const text = a.tips.map((t) => `${t.title} ${t.body}`).join(' ');
-    expect(text).toMatch(/about 1 day in 3, £20 a time/);
-    expect(text).not.toMatch(/£6\.\d\d a day/);
+    const text = a.tips.map((x) => `${x.title} ${x.body}`).join(' ');
+    expect(text).toMatch(/quiet days/);
+    expect(text).toMatch(/days at around £20/);
   });
 
   it('warns that a short history is only a sketch', () => {
     const early = analyse([spend('2026-08-02', 18)], 3);
-    expect(early.thinEvidence).toBe(true);
-    expect(early.tips.some((t) => t.id === 'thin-evidence')).toBe(true);
+    expect(early.forecast.thin).toBe(true);
+    expect(early.tips.some((x) => x.id === 'thin-evidence')).toBe(true);
   });
 
   it('stops calling it thin once a pattern has actually formed', () => {
-    expect(a.thinEvidence).toBe(false);
-    expect(a.tips.some((t) => t.id === 'thin-evidence')).toBe(false);
+    expect(a.forecast.thin).toBe(false);
+    expect(a.tips.some((x) => x.id === 'thin-evidence')).toBe(false);
   });
 
   it('counts a no-spend day as a no-spend day, not an average', () => {
-    // Nothing at all since the 11th: the pattern still says one day in three.
+    // Nothing at all since the 11th, so quiet days now dominate the sample.
     const later = analyse(spends, 20);
     expect(later.spendDays).toBe(4);
     expect(later.noSpendDays).toBe(16);
-    expect(later.spendDayFrequency).toBeCloseTo(0.2, 2);
+    expect(later.forecast.quietDayShare).toBeCloseTo(0.8, 1);
   });
 });
 
@@ -262,7 +267,7 @@ describe('a night out spread across several transactions', () => {
     const single = analyse([spend('2026-08-01', 104.5), spend('2026-08-03', 9)], 5);
     expect(a.bigNights[0].amount).toBe(single.bigNights[0].amount);
     expect(a.everydaySpent).toBe(single.everydaySpent);
-    expect(a.projectionEveryday.endOfMonthTotal).toBe(single.projectionEveryday.endOfMonthTotal);
+    expect(a.forecast.median).toBe(single.forecast.median);
   });
 });
 
@@ -278,6 +283,6 @@ describe('spends dated later in the month', () => {
 
   it('never claims you spend on more days than have happened', () => {
     expect(a.spendDays).toBeLessThanOrEqual(a.dayOfMonth);
-    expect(a.spendDayFrequency).toBeLessThanOrEqual(1);
+    expect(a.forecast.quietDayShare).toBeGreaterThanOrEqual(0);
   });
 });

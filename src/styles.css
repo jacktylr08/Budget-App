@@ -299,11 +299,7 @@ details.disclose summary { cursor: pointer; font-size: 12.5px; color: var(--text
 .markdown p { max-width: 78ch; }
 .markdown ul { margin: 0 0 10px; padding-left: 20px; color: var(--text-secondary); line-height: 1.6; }
 
-@media (max-width: 720px) {
-  .page { padding: 16px 12px 56px; }
-  .stat-value { font-size: 22px; }
-  th:first-child, td:first-child { min-width: 170px; }
-}
+
 
 /* ---------- Spending this month ---------- */
 .spend-stats {
@@ -354,4 +350,155 @@ details.disclose summary { cursor: pointer; font-size: 12.5px; color: var(--text
 @media (max-width: 560px) {
   .spend-add { grid-template-columns: 1fr 1fr; }
   .spend-add > :nth-child(3) { grid-column: 1 / -1; }
+}
+
+/* ---------- Forecast shape strip ---------- */
+.shape-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.shape-label { font-size: 12px; color: var(--text-secondary); font-weight: 550; }
+.shape-items { display: flex; gap: 6px; flex-wrap: wrap; }
+.shape-pill {
+  font-size: 12.5px;
+  font-weight: 550;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.shape-pill.strong {
+  background: color-mix(in srgb, var(--series-1) 14%, transparent);
+  color: var(--series-1);
+}
+
+/* ---------- Collapsible cards ---------- */
+.card-collapsible { padding: 0; }
+.card-collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 52px;
+}
+.card-collapsible > summary::-webkit-details-marker { display: none; }
+.collapsible-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.collapsible-summary {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.collapsible-chevron {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+details[open] > summary .collapsible-chevron { transform: rotate(-135deg) translate(-2px, -2px); }
+.collapsible-body { padding: 0 16px 16px; }
+
+/* ---------- Bottom navigation (phones) ---------- */
+.bottom-nav {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.bottom-nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 4px 8px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  cursor: pointer;
+  min-height: 52px;
+}
+.bottom-nav button[aria-current='page'] { color: var(--series-1); }
+.bottom-nav-icon { font-size: 16px; line-height: 1; }
+
+/* ---------- Phones ---------- */
+@media (max-width: 720px) {
+  body { font-size: 15px; }
+
+  .page { padding: 14px 12px 84px; }
+  .topbar { padding: 10px 12px; gap: 10px; }
+  .page-head { margin-bottom: 14px; gap: 10px; }
+  .page-head h1 { font-size: 19px; }
+  .page-head p { font-size: 13.5px; }
+
+  .grid { gap: 10px; }
+  .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
+  .grid.cols-4 { grid-template-columns: 1fr 1fr; }
+
+  .card { padding: 14px; border-radius: 12px; }
+  /* Must re-assert: the rule above shares specificity and would otherwise double the padding. */
+  .card-collapsible { padding: 0; }
+  .card-collapsible > summary { padding: 12px 14px; min-height: 48px; }
+  .collapsible-body { padding: 0 14px 14px; }
+
+  /* Comfortable tap targets and no iOS zoom-on-focus. */
+  input, select, textarea { font-size: 16px; padding: 9px 11px; min-height: 44px; }
+  button.btn { min-height: 44px; padding: 10px 14px; }
+  button.btn.sm { min-height: 36px; padding: 6px 11px; }
+  .chip { min-height: 38px; padding: 8px 14px; }
+
+  .stat-value { font-size: 22px; }
+  .spend-figure { font-size: 19px; }
+  .spend-stats { grid-template-columns: 1fr 1fr; gap: 14px 10px; }
+
+  /* Stack the add-spend row instead of squeezing four controls side by side. */
+  .spend-add { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .spend-add > :nth-child(3) { grid-column: 1 / -1; }
+  .spend-add > :nth-child(4) { grid-column: 1 / -1; }
+  .spend-row { grid-template-columns: 62px 1fr auto auto; gap: 8px; font-size: 13px; }
+
+  .list-row { grid-template-columns: 1fr 108px auto; }
+
+  .tips { gap: 8px; }
+  .tip { padding: 11px 12px; }
+  .tip-body { font-size: 13px; }
+
+  /* Tables keep their own scroller so the page itself never moves sideways. */
+  .table-scroll { -webkit-overflow-scrolling: touch; }
+  th, td { padding: 8px; font-size: 13px; }
+  th:first-child, td:first-child { min-width: 150px; }
+
+  .kv { font-size: 13.5px; }
+  dl.kv dd { white-space: nowrap; }
+}
+
+/* The page itself must never scroll sideways — only its scroll containers do. */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -12,7 +14,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { round2 } from '../engine';
 import { money, moneyShort } from '../format';
 import type { SpendingAnalysis } from '../spending';
 import type { MonthResult } from '../types';
@@ -221,81 +222,84 @@ export function FundMeter({
 }
 
 /**
- * Burn-down of the guilt-free budget: what has actually been spent against the even
- * pace line, then two dashed projections from today — one assuming nights out carry on
- * at the same rate, one assuming everyday spending only.
+ * The month's spending: what has actually gone, then the range the rest of the month
+ * lands in. The band is the middle 80% of a couple of thousand simulated months drawn
+ * from your own days, so it widens exactly as far as your own variation justifies.
  */
-export function SpendBurndownChart({ analysis }: { analysis: SpendingAnalysis }) {
+export function SpendBurndownChart({
+  analysis,
+  height = 230,
+}: {
+  analysis: SpendingAnalysis;
+  height?: number;
+}) {
   const c = useThemeColors();
-  const { dayOfMonth, spent, budget } = analysis;
+  const { dayOfMonth, budget, forecast } = analysis;
 
-  const data = useMemo(
-    () =>
-      analysis.cumulativeByDay.map(({ day, spent: actual, budgetLine }) => {
-        const from = day - dayOfMonth;
-        const beyondToday = day >= dayOfMonth && dayOfMonth > 0;
-        return {
-          day,
-          Pace: budgetLine,
-          Spent: actual,
-          // Projections start at today's actual total so the lines join up.
-          'Everyday spending only': beyondToday
-            ? round2(spent + analysis.projectionEveryday.rate * from)
-            : null,
-          'Out every Fri/Sat': beyondToday
-            ? round2(spent + analysis.projectionEveryWeekend.rate * from)
-            : null,
-        };
-      }),
-    [analysis, dayOfMonth, spent],
-  );
+  const data = useMemo(() => {
+    const bandByDay = new Map(forecast.bands.map((b) => [b.day, b]));
+    return analysis.cumulativeByDay.map(({ day, spent, budgetLine }) => {
+      const band = bandByDay.get(day);
+      return {
+        day,
+        Pace: budgetLine,
+        Spent: spent,
+        // Recharts draws a two-value array as a band between the two.
+        range: band ? [band.low, band.high] : null,
+        Likely: band ? band.mid : null,
+      };
+    });
+  }, [analysis.cumulativeByDay, forecast.bands]);
 
-  const runOut = analysis.ranOutOnDay ?? analysis.projectionEveryday.runOutDay;
+  const runOut = analysis.ranOutOnDay ?? forecast.likelyRunOutDay;
 
   return (
-    <ResponsiveContainer width="100%" height={230}>
-      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 8, right: 10, bottom: 0, left: -12 }}>
         <CartesianGrid stroke={c.grid} vertical={false} />
         <XAxis dataKey="day" {...axisProps(c.text)} interval={4} />
-        <YAxis {...axisProps(c.text)} tickFormatter={moneyShort} width={52} />
+        <YAxis {...axisProps(c.text)} tickFormatter={moneyShort} width={48} />
         <Tooltip
           content={<MoneyTooltip />}
           labelFormatter={(d) => `Day ${d}`}
           cursor={{ stroke: c.muted, strokeWidth: 1 }}
         />
-        <Legend verticalAlign="top" align="left" height={28} iconType="plainline" wrapperStyle={{ fontSize: 12, color: c.text }} />
+        <Legend
+          verticalAlign="top"
+          align="left"
+          height={26}
+          iconType="plainline"
+          wrapperStyle={{ fontSize: 11.5, color: c.text }}
+        />
         <ReferenceLine
           y={budget}
           stroke={c.bad}
           strokeDasharray="2 3"
           label={{ value: 'Budget', position: 'insideTopRight', fill: c.text, fontSize: 11 }}
         />
-        {runOut !== undefined && (
-          <ReferenceLine
-            x={runOut}
-            stroke={c.bad}
-            strokeWidth={1.5}
-            label={{ value: `runs out ${runOut}`, position: 'top', fill: c.bad, fontSize: 11 }}
-          />
+        {runOut !== undefined && forecast.probabilityRunOut >= 0.25 && (
+          <ReferenceLine x={runOut} stroke={c.bad} strokeDasharray="3 3" strokeWidth={1.5} />
         )}
-        {dayOfMonth > 0 && <ReferenceLine x={dayOfMonth} stroke={c.muted} strokeDasharray="3 3" />}
+        <Area
+          dataKey="range"
+          name="Likely range"
+          stroke="none"
+          fill={c.series[0]}
+          fillOpacity={0.16}
+          isAnimationActive={false}
+          connectNulls
+        />
+        <Line
+          type="monotone"
+          dataKey="Likely"
+          name="Most likely"
+          stroke={c.series[0]}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+          dot={false}
+          connectNulls
+        />
         <Line type="linear" dataKey="Pace" stroke={c.muted} strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-        <Line
-          type="monotone"
-          dataKey="Out every Fri/Sat"
-          stroke={c.series[1]}
-          strokeWidth={2}
-          strokeDasharray="5 4"
-          dot={false}
-        />
-        <Line
-          type="monotone"
-          dataKey="Everyday spending only"
-          stroke={c.series[2]}
-          strokeWidth={2}
-          strokeDasharray="5 4"
-          dot={false}
-        />
         <Line
           type="monotone"
           dataKey="Spent"
@@ -305,7 +309,8 @@ export function SpendBurndownChart({ analysis }: { analysis: SpendingAnalysis })
           activeDot={{ r: 4, strokeWidth: 2, stroke: c.surface }}
           connectNulls={false}
         />
-      </LineChart>
+        {dayOfMonth > 0 && <ReferenceLine x={dayOfMonth} stroke={c.muted} strokeDasharray="2 2" />}
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

@@ -1,31 +1,22 @@
 /**
  * Month-to-date spending analysis for the guilt-free budget.
  *
- * The point of this module is to answer the question that actually causes stress:
- * "I spent £100 on the first Saturday — am I in trouble?" A naive daily average says
- * yes and panics you. So spending is split into everyday spending and big nights, and
- * two honest projections are offered instead of one misleading one.
+ * The question this exists to answer is "am I in trouble?", and the honest answer is a
+ * range, not a number. Real months are mostly quiet days with a few £50 ones, so the rest
+ * of the month is forecast by resampling the days you have actually had (see forecast.ts)
+ * rather than by extending an average nobody lives.
  */
 import { round2 } from './engine';
+import {
+  affordableShape,
+  forecastMonth,
+  observeDays,
+  type DayObservation,
+  type Forecast,
+} from './forecast';
 import type { MonthKey, SpendEntry } from './types';
 
-export type SpendingStatus =
-  | 'not-started'
-  | 'under-pace'
-  | 'on-pace'
-  | 'over-pace'
-  | 'spent-up';
-
-export interface Projection {
-  /** Pounds per day this projection assumes from today onwards. */
-  rate: number;
-  /** Day of the month the budget hits zero, if it does before the month ends. */
-  runOutDay?: number;
-  /** Total spend by the last day of the month at this rate. */
-  endOfMonthTotal: number;
-  /** Positive when this projection ends the month over budget. */
-  overspend: number;
-}
+export type SpendingStatus = 'not-started' | 'under-pace' | 'on-pace' | 'over-pace' | 'spent-up';
 
 export interface Tip {
   id: string;
@@ -51,38 +42,25 @@ export interface SpendingAnalysis {
   status: SpendingStatus;
   /** What is left, spread evenly over the days remaining. */
   dailyAllowance: number;
-  /** Everyday spending averaged over every elapsed day. Used for the chart's slope. */
-  everydayRate: number;
   everydaySpent: number;
-  /** Days you actually spent something (excluding big nights). */
+  /** Days something was spent (excluding big nights). */
   spendDays: number;
-  /** Elapsed days with no spending at all. */
+  /** Elapsed days with nothing spent at all. */
   noSpendDays: number;
-  /** Median amount on a day you do spend — what a spend day actually looks like. */
   typicalSpendDay: number;
-  /** Share of days that are spend days, e.g. 0.33 for one day in three. */
-  spendDayFrequency: number;
-  /** Whole spend days expected in the rest of the month, at that frequency. */
-  expectedSpendDaysLeft: number;
-  /** Everyday spending still to come: expected spend days x typical amount. */
-  projectedEverydayRemaining: number;
-  /** True when there is too little history for the pattern to mean much. */
-  thinEvidence: boolean;
   bigNights: SpendEntry[];
   typicalBigNight: number;
   /** The day the budget was used up, when it already has been. */
   ranOutOnDay?: number;
-  /** Everyday spending only, no more big nights. The realistic baseline. */
-  projectionEveryday: Projection;
-  /** Everyday spending plus a big night on every Friday and Saturday left. The ceiling. */
-  projectionEveryWeekend: Projection;
-  /** More nights out of a typical size that still fit inside what is left. */
+  /** Where the month lands, as a range with odds. */
+  forecast: Forecast;
+  /** What the remaining money buys, in quiet days, spend days and nights out. */
+  shape: { spendDays: number; bigNights: number; quietDays: number };
   affordableBigNights: number;
-  /** Consecutive no-spend days needed to get back to the straight line. */
+  /** No-spend days needed to get back to the straight line. */
   noSpendDaysToRecover: number;
-  /** Friday and Saturday nights still to come this month. */
   weekendNightsLeft: number;
-  /** Cumulative spend by day, for the burn-down chart. */
+  /** Actual cumulative spend by day, up to today. */
   cumulativeByDay: Array<{ day: number; spent: number | null; budgetLine: number }>;
   tips: Tip[];
 }
@@ -109,25 +87,28 @@ export function formatDayOfMonth(month: MonthKey, day: number): string {
   const [y, m] = month.split('-').map(Number);
   const date = new Date(y, m - 1, day);
   const suffix =
-    day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
+    day % 10 === 1 && day !== 11
+      ? 'st'
+      : day % 10 === 2 && day !== 12
+        ? 'nd'
+        : day % 10 === 3 && day !== 13
+          ? 'rd'
+          : 'th';
   return `${date.toLocaleDateString('en-GB', { weekday: 'short' })} ${day}${suffix}`;
 }
 
-function project(spent: number, budget: number, rate: number, dayOfMonth: number, days: number): Projection {
-  const daysLeft = Math.max(0, days - dayOfMonth);
-  const endOfMonthTotal = round2(spent + rate * daysLeft);
-  const remaining = budget - spent;
-  let runOutDay: number | undefined;
-  if (rate > 0 && remaining > 0) {
-    const day = dayOfMonth + remaining / rate;
-    if (day <= days) runOutDay = Math.floor(day);
-  }
-  return {
-    rate: round2(rate),
-    runOutDay,
-    endOfMonthTotal,
-    overspend: round2(Math.max(0, endOfMonthTotal - budget)),
-  };
+export interface AnalyseInput {
+  month: MonthKey;
+  budget: number;
+  spends: SpendEntry[];
+  /** The single "spent so far" figure, used when nothing has been logged. */
+  fallbackTotal?: number;
+  bigNightThreshold?: number;
+  now?: Date;
+  fundName?: string;
+  fundBalance?: number;
+  /** Earlier months' spend logs, so a young month still has something to learn from. */
+  history?: Array<{ month: MonthKey; spends: SpendEntry[] }>;
 }
 
 export function analyseSpending({
@@ -139,17 +120,8 @@ export function analyseSpending({
   now = new Date(),
   fundName,
   fundBalance = 0,
-}: {
-  month: MonthKey;
-  budget: number;
-  spends: SpendEntry[];
-  /** The single "spent so far" figure, used when nothing has been logged. */
-  fallbackTotal?: number;
-  bigNightThreshold?: number;
-  now?: Date;
-  fundName?: string;
-  fundBalance?: number;
-}): SpendingAnalysis {
+  history = [],
+}: AnalyseInput): SpendingAnalysis {
   const days = daysInMonth(month);
   const [y, m] = month.split('-').map(Number);
   const isCurrentMonth = now.getFullYear() === y && now.getMonth() + 1 === m;
@@ -186,24 +158,17 @@ export function analyseSpending({
     ? round2(bigNights.reduce((a, s) => a + s.amount, 0) / bigNights.length)
     : bigNightThreshold;
 
-  const elapsed = Math.max(1, dayOfMonth);
-  // With nothing logged, everyday spending cannot be separated out — treat it all as everyday.
-  const everydayRate = logged.length > 0 ? round2(everydaySpent / elapsed) : round2(spent / elapsed);
-
-  // Spending is lumpy: most days are nothing, some days are £20. Modelling it as a flat
-  // daily rate describes a month nobody actually lives, so the pattern is measured as
-  // "how often do you spend, and how much when you do".
   const everydayByDay = new Map<number, number>();
   for (const [day, entries] of byDay) {
     if (bigNightDates.has(entries[0].date)) continue;
-    // A spend dated later this month still counts as money gone, but it says nothing
-    // about how often you have been spending, so it stays out of the pattern.
+    // A spend dated later this month is money gone, but says nothing about how often you
+    // have been spending, so it stays out of the pattern.
     if (dayOfMonth > 0 && day > dayOfMonth) continue;
     everydayByDay.set(day, dayTotal(entries));
   }
   const spendDayAmounts = [...everydayByDay.values()].filter((v) => v > 0).sort((a, b) => a - b);
   const spendDays = spendDayAmounts.length;
-  const noSpendDays = Math.max(0, elapsed - spendDays - bigNights.length);
+  const noSpendDays = Math.max(0, Math.max(0, dayOfMonth) - spendDays - bigNights.length);
   const median = (xs: number[]): number =>
     xs.length === 0
       ? 0
@@ -211,14 +176,6 @@ export function analyseSpending({
         ? xs[(xs.length - 1) / 2]
         : round2((xs[xs.length / 2 - 1] + xs[xs.length / 2]) / 2);
   const typicalSpendDay = median(spendDayAmounts);
-  const spendDayFrequency = spendDays / elapsed;
-  const expectedSpendDaysLeft = Math.round(spendDayFrequency * daysLeft);
-  // No log means no pattern to read — fall back to the flat average.
-  const projectedEverydayRemaining =
-    logged.length > 0
-      ? round2(expectedSpendDaysLeft * typicalSpendDay)
-      : round2(everydayRate * daysLeft);
-  const thinEvidence = dayOfMonth < 7 || spendDays < 3;
 
   const expectedByNow = round2((budget * dayOfMonth) / days);
   const variance = round2(spent - expectedByNow);
@@ -249,37 +206,58 @@ export function analyseSpending({
             ? 'under-pace'
             : 'on-pace';
 
-  const projectionEveryday = project(
-    spent,
+  // Resample this month's days; fall back to earlier months while this one is young.
+  const observations: DayObservation[] =
+    logged.length > 0 || dayOfMonth === 0
+      ? observeDays(month, logged, dayOfMonth)
+      : // Only a running total exists: spread it evenly so there is still something to sample.
+        observeDays(
+          month,
+          Array.from({ length: Math.max(0, dayOfMonth) }, (_, i) => ({
+            id: `flat-${i}`,
+            date: `${month}-${String(i + 1).padStart(2, '0')}`,
+            amount: round2(spent / Math.max(1, dayOfMonth)),
+          })),
+          dayOfMonth,
+        );
+  const priorObservations = history
+    .filter((h) => h.month !== month && h.spends.length > 0)
+    .flatMap((h) => observeDays(h.month, h.spends, daysInMonth(h.month)));
+
+  const forecast = forecastMonth({
+    month,
     budget,
-    daysLeft > 0 ? projectedEverydayRemaining / daysLeft : 0,
-    dayOfMonth,
-    days,
-  );
-  // The ceiling: everyday spending, plus a night out on every Friday and Saturday left.
-  // Expressed as a daily rate so it shares the projection maths.
-  const weekendNightsLeftCount = weekendNightsAfter(month, dayOfMonth);
-  const weekendLoad = weekendNightsLeftCount * typicalBigNight;
-  const projectionEveryWeekend = project(
     spent,
-    budget,
-    daysLeft > 0 ? (projectedEverydayRemaining + weekendLoad) / daysLeft : 0,
     dayOfMonth,
-    days,
+    daysInMonth: days,
+    observations,
+    priorObservations,
+  });
+
+  const weekendNightsLeft = weekendNightsAfter(month, dayOfMonth);
+  const shape = affordableShape(
+    remaining,
+    daysLeft,
+    forecast.quietDayShare,
+    forecast.typicalSpendDay,
+    typicalBigNight,
+    weekendNightsLeft,
   );
 
-  const affordableBigNights = Math.max(0, Math.floor(Math.max(0, remaining) / Math.max(1, typicalBigNight)));
+  const affordableBigNights = Math.max(
+    0,
+    Math.floor(Math.max(0, remaining) / Math.max(1, typicalBigNight)),
+  );
   const noSpendDaysToRecover =
     budget > 0 && variance > 0 ? Math.max(0, Math.ceil((spent * days) / budget - dayOfMonth)) : 0;
-  const weekendNightsLeft = weekendNightsLeftCount;
 
   const cumulativeByDay: SpendingAnalysis['cumulativeByDay'] = [];
   let running = 0;
+  const elapsed = Math.max(1, dayOfMonth);
   for (let d = 1; d <= days; d++) {
     running += logged.filter((s) => dayOf(s.date) === d).reduce((a, s) => a + s.amount, 0);
     cumulativeByDay.push({
       day: d,
-      // Only draw the actual line up to today.
       spent: d <= dayOfMonth ? round2(logged.length > 0 ? running : (spent * d) / elapsed) : null,
       budgetLine: round2((budget * d) / days),
     });
@@ -296,18 +274,11 @@ export function analyseSpending({
     variance,
     status,
     dailyAllowance,
-    everydayRate,
     bigNights,
-    bigNightThreshold,
     typicalBigNight,
-    spendDays,
-    typicalSpendDay,
-    expectedSpendDaysLeft,
-    projectedEverydayRemaining,
-    thinEvidence,
     ranOutOnDay,
-    projectionEveryday,
-    projectionEveryWeekend,
+    forecast,
+    shape,
     affordableBigNights,
     noSpendDaysToRecover,
     weekendNightsLeft,
@@ -329,20 +300,15 @@ export function analyseSpending({
     variance,
     status,
     dailyAllowance,
-    everydayRate,
     everydaySpent,
     spendDays,
     noSpendDays,
     typicalSpendDay,
-    spendDayFrequency,
-    expectedSpendDaysLeft,
-    projectedEverydayRemaining,
-    thinEvidence,
     bigNights,
     typicalBigNight,
     ranOutOnDay,
-    projectionEveryday,
-    projectionEveryWeekend,
+    forecast,
+    shape,
     affordableBigNights,
     noSpendDaysToRecover,
     weekendNightsLeft,
@@ -352,18 +318,20 @@ export function analyseSpending({
 }
 
 const gbp = (n: number) => `£${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
+const pc = (n: number) => `${Math.round(n * 100)}%`;
 
-/** "1 day in 3, about £18 a time" — how the spending actually falls, not a flat rate. */
-function patternPhrase(spendDays: number, elapsed: number, typical: number): string {
-  if (spendDays === 0) return 'no everyday spending logged yet';
-  const oneIn = Math.max(1, Math.round(elapsed / spendDays));
-  const frequency = oneIn === 1 ? 'most days' : `about 1 day in ${oneIn}`;
-  return `${frequency}, ${gbp(typical)} a time`;
+/** "9 quiet days and 6 spend days" — the rest of the month in the shape it really takes. */
+function shapePhrase(shape: SpendingAnalysis['shape'], typicalSpendDay: number): string {
+  const parts: string[] = [];
+  if (shape.spendDays > 0) parts.push(`${shape.spendDays} days at around ${gbp(typicalSpendDay)}`);
+  if (shape.bigNights > 0) parts.push(`${shape.bigNights} night${shape.bigNights === 1 ? '' : 's'} out`);
+  if (shape.quietDays > 0) parts.push(`${shape.quietDays} quiet days`);
+  return parts.join(', ');
 }
 
 /**
- * Concrete, arithmetic-backed suggestions. Every one names a number you can act on;
- * none of them tell you off.
+ * Concrete suggestions with a number attached. Every one is derived from the forecast,
+ * so none of them can contradict the headline.
  */
 function buildTips(c: {
   month: MonthKey;
@@ -376,20 +344,11 @@ function buildTips(c: {
   variance: number;
   status: SpendingStatus;
   dailyAllowance: number;
-  everydayRate: number;
   bigNights: SpendEntry[];
-  bigNightThreshold: number;
   typicalBigNight: number;
-  spendDays: number;
-  typicalSpendDay: number;
-  expectedSpendDaysLeft: number;
-  projectedEverydayRemaining: number;
-  thinEvidence: boolean;
   ranOutOnDay?: number;
-  /** Everyday spending only, no more big nights. The realistic baseline. */
-  projectionEveryday: Projection;
-  /** Everyday spending plus a big night on every Friday and Saturday left. The ceiling. */
-  projectionEveryWeekend: Projection;
+  forecast: Forecast;
+  shape: SpendingAnalysis['shape'];
   affordableBigNights: number;
   noSpendDaysToRecover: number;
   weekendNightsLeft: number;
@@ -399,8 +358,9 @@ function buildTips(c: {
 }): Tip[] {
   const tips: Tip[] = [];
   if (c.dayOfMonth === 0 || c.budget <= 0) return tips;
+  const f = c.forecast;
 
-  // An early big night is the single most common cause of false panic.
+  // An early big night is the commonest cause of false panic.
   const earlyBigNight = c.bigNights.find((s) => dayOf(s.date) <= 10);
   if (earlyBigNight && c.remaining > 0) {
     const share = Math.round((earlyBigNight.amount / c.budget) * 100);
@@ -408,11 +368,9 @@ function buildTips(c: {
       id: 'early-big-night',
       tone: 'neutral',
       title: `That ${gbp(earlyBigNight.amount)} night is ${share}% of the month, not a write-off`,
-      body: `Spending it on the ${formatDayOfMonth(c.month, dayOf(earlyBigNight.date))} makes the pace bar look alarming, because the pace bar assumes you spend evenly and nobody does. What actually matters: ${gbp(
-        c.remaining,
-      )} left across ${c.daysLeft} days, which is ${gbp(c.dailyAllowance)} a day. You spend ${patternPhrase(c.spendDays, c.dayOfMonth, c.typicalSpendDay)}, which comes to about ${gbp(
-        c.projectedEverydayRemaining,
-      )} over the rest of the month, so the budget holds if you have ${c.affordableBigNights === 0 ? 'no more big nights' : `at most ${c.affordableBigNights} more like it`}.`,
+      body: `Spending it on the ${formatDayOfMonth(c.month, dayOf(earlyBigNight.date))} makes the pace bar look alarming, because the pace bar assumes you spend evenly and nobody does. On how the rest of your month usually goes, you finish inside the budget ${pc(
+        f.probabilityWithinBudget,
+      )} of the time. What is left covers ${shapePhrase(c.shape, f.typicalSpendDay)}.`,
     });
   }
 
@@ -423,20 +381,22 @@ function buildTips(c: {
       title: c.ranOutOnDay
         ? `Budget gone on the ${formatDayOfMonth(c.month, c.ranOutOnDay)}, ${c.daysLeft} days left`
         : `Budget gone, ${c.daysLeft} days left`,
-      body: `You are ${gbp(Math.abs(c.remaining))} past the ${gbp(c.budget)} budget. This is what the debt and spillover line is for — it absorbs the hit. Do not take it out of savings, and do not slash next month to make up for it; that is the boom-bust cycle. Anything you do not spend from here reduces the damage pound for pound.`,
+      body: `You are ${gbp(Math.abs(c.remaining))} past the ${gbp(
+        c.budget,
+      )} budget. This is what the debt and spillover line is for — it absorbs the hit. Do not take it out of savings, and do not slash next month to make up for it; that is the boom-bust cycle. Anything you do not spend from here reduces the damage pound for pound.`,
     });
     if (c.daysLeft > 0) {
       tips.push({
         id: 'damage-forecast',
         tone: 'warn',
-        title: `Your usual pattern still adds about ${gbp(c.projectedEverydayRemaining)} before month end`,
-        body: `That finishes at ${gbp(c.projectionEveryday.endOfMonthTotal)}, ${gbp(
-          c.projectionEveryday.overspend,
-        )} over. Going out on all ${c.weekendNightsLeft} remaining Friday and Saturday nights would finish at ${gbp(
-          c.projectionEveryWeekend.endOfMonthTotal,
-        )} instead — the gap between those two numbers, ${gbp(
-          Math.max(0, c.projectionEveryWeekend.endOfMonthTotal - c.projectionEveryday.endOfMonthTotal),
-        )}, is entirely within your control.`,
+        title: `A normal rest-of-month adds about ${gbp(Math.max(0, f.median - c.spent))} more`,
+        body: `That would finish at ${gbp(f.median)} — ${gbp(
+          Math.max(0, f.median - c.budget),
+        )} over. A quiet run of days finishes at ${gbp(f.low)} and a heavy one at ${gbp(
+          f.high,
+        )}, so the difference between now and month end is still ${gbp(
+          Math.max(0, f.high - f.low),
+        )} of your own choosing.`,
       });
     }
     if (c.fundName && c.fundBalance > 0) {
@@ -451,108 +411,93 @@ function buildTips(c: {
     }
   }
 
-  if (c.status === 'over-pace') {
+  // The peace-of-mind number, phrased as odds rather than a verdict.
+  if (c.remaining > 0 && c.daysLeft > 0 && !f.thin) {
+    const good = f.probabilityWithinBudget >= 0.7;
     tips.push({
-      id: 'over-pace',
-      tone: 'warn',
-      title: `${gbp(c.dailyAllowance)} a day from here keeps you inside the budget`,
-      body: `You are ${gbp(c.variance)} ahead of the straight line with ${c.daysLeft} days to go. You spend ${patternPhrase(
-        c.spendDays,
-        c.dayOfMonth,
-        c.typicalSpendDay,
-      )} — about ${gbp(c.projectedEverydayRemaining)} still to come on that pattern, against ${gbp(
-        Math.max(0, c.remaining),
-      )} left. ${
-        c.projectedEverydayRemaining <= c.remaining
-          ? 'The everyday stuff is not the problem — the nights out are'
-          : `Roughly ${Math.max(1, Math.ceil((c.projectedEverydayRemaining - c.remaining) / Math.max(1, c.typicalSpendDay)))} of those spend days need to become no-spend days`
-      }.${
-        c.noSpendDaysToRecover > 0
-          ? ` Alternatively, ${c.noSpendDaysToRecover} no-spend day${c.noSpendDaysToRecover > 1 ? 's' : ''} put you back on the line and you carry on as normal after that.`
+      id: 'odds',
+      tone: good ? 'good' : f.probabilityWithinBudget >= 0.4 ? 'warn' : 'bad',
+      title: good
+        ? `${pc(f.probabilityWithinBudget)} chance you finish inside the budget`
+        : `Only a ${pc(f.probabilityWithinBudget)} chance of finishing inside the budget as things stand`,
+      body: good
+        ? `Running the rest of the month a couple of thousand times using your own mix of quiet days and spend days, you land around ${gbp(
+            f.median,
+          )} — most often between ${gbp(f.low)} and ${gbp(f.high)}. Nothing needs fixing.`
+        : `Your own mix of days lands around ${gbp(f.median)}, and even a quiet run comes in at ${gbp(
+            f.low,
+          )}. Dropping ${
+            c.affordableBigNights === 0 ? 'the next night out' : 'one night out'
+          } is worth about ${gbp(c.typicalBigNight)} of that gap — more than trimming everyday spending would give you.`,
+    });
+  }
+
+  // What the money actually buys, in the shape a month takes.
+  if (c.remaining > 0 && c.daysLeft > 0) {
+    tips.push({
+      id: 'shape',
+      tone: 'neutral',
+      title: `${gbp(c.remaining)} left covers ${shapePhrase(c.shape, f.typicalSpendDay)}`,
+      body: `That is the rest of the month in the shape yours normally takes — ${pc(
+        f.quietDayShare,
+      )} of your days cost nothing at all, and the ones that do cost ${gbp(
+        f.typicalSpendDay,
+      )} typically${f.biggestDay > 0 ? `, with your biggest day so far at ${gbp(f.biggestDay)}` : ''}. ${
+        c.weekendNightsLeft > 0
+          ? `There are ${c.weekendNightsLeft} Friday and Saturday nights left, so decide which ${
+              c.shape.bigNights === 0 ? 'ones stay cheap' : `${c.shape.bigNights} of them are the big ones`
+            } while it is still a choice.`
           : ''
       }`,
     });
-    if (c.projectionEveryday.runOutDay) {
-      tips.push({
-        id: 'run-out-warning',
-        tone: 'bad',
-        title: `Even with no more nights out the money runs out on the ${formatDayOfMonth(c.month, c.projectionEveryday.runOutDay)}`,
-        body: `That is on your usual pattern alone — ${patternPhrase(
-          c.spendDays,
-          c.dayOfMonth,
-          c.typicalSpendDay,
-        )} — with no nights out at all, which leaves ${
-          c.days - c.projectionEveryday.runOutDay
-        } day${c.days - c.projectionEveryday.runOutDay === 1 ? '' : 's'} of the month unfunded. This is not a nights-out problem — the day-to-day rate is the thing to cut.`,
-      });
-    } else if (c.projectionEveryWeekend.runOutDay) {
-      tips.push({
-        id: 'run-out-ceiling',
-        tone: 'warn',
-        title: `Going out every remaining weekend would empty it by the ${formatDayOfMonth(c.month, c.projectionEveryWeekend.runOutDay)}`,
-        body: `That is the ceiling, not the forecast: ${c.weekendNightsLeft} more night${
-          c.weekendNightsLeft === 1 ? '' : 's'
-        } at ${gbp(c.typicalBigNight)}. Your usual pattern on its own — ${patternPhrase(
-          c.spendDays,
-          c.dayOfMonth,
-          c.typicalSpendDay,
-        )} — sees the month out with ${gbp(
-          Math.max(0, c.budget - c.projectionEveryday.endOfMonthTotal),
-        )} spare, so the question is simply how many of those ${c.weekendNightsLeft} nights are big ones — ${
-          c.affordableBigNights
-        } fit inside the budget.`,
-      });
-    }
   }
 
-  if (c.weekendNightsLeft > 0 && c.remaining > 0) {
-    const perWeekend = round2(
-      Math.max(0, c.remaining - c.projectedEverydayRemaining) / c.weekendNightsLeft,
-    );
+  if (c.status === 'over-pace' && c.remaining > 0 && f.probabilityWithinBudget < 0.7) {
     tips.push({
-      id: 'weekend-plan',
-      tone: perWeekend >= c.typicalBigNight ? 'good' : 'neutral',
-      title: `${c.weekendNightsLeft} Friday/Saturday night${c.weekendNightsLeft > 1 ? 's' : ''} left, ${gbp(perWeekend)} each`,
-      body: `After covering your usual everyday spending (about ${gbp(
-        c.projectedEverydayRemaining,
-      )} over the rest of the month), ${gbp(
-        Math.max(0, c.remaining - c.projectedEverydayRemaining),
-      )} is free for going out. Split evenly that is ${gbp(perWeekend)} a night${
-        perWeekend < c.typicalBigNight
-          ? `, against the ${gbp(c.typicalBigNight)} a night out usually costs you. Decide now which of those nights is the big one and which are cheap — that choice made on a Tuesday is a plan, made at 9pm on Saturday it is a regret.`
-          : `, comfortably above the ${gbp(c.typicalBigNight)} they usually cost.`
+      id: 'over-pace',
+      tone: 'warn',
+      title: `${gbp(c.dailyAllowance)} a day average from here keeps you inside`,
+      body: `You are ${gbp(c.variance)} ahead of the straight line with ${
+        c.daysLeft
+      } days to go. Averages are not how you spend, so in practice that means ${shapePhrase(
+        c.shape,
+        f.typicalSpendDay,
+      )}.${
+        c.noSpendDaysToRecover > 0
+          ? ` ${c.noSpendDaysToRecover} no-spend day${
+              c.noSpendDaysToRecover > 1 ? 's' : ''
+            } would put you back on the line, after which nothing else has to change.`
+          : ''
       }`,
     });
   }
 
-  if (c.status === 'under-pace' || c.status === 'on-pace') {
+  if (f.likelyRunOutDay !== undefined && c.remaining > 0 && f.probabilityRunOut >= 0.25) {
     tips.push({
-      id: 'on-track',
-      tone: 'good',
-      title:
-        c.affordableBigNights > 0
-          ? `On track — room for ${c.affordableBigNights} more night${c.affordableBigNights > 1 ? 's' : ''} out`
-          : 'On track',
-      body: `${gbp(c.remaining)} left over ${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} (${gbp(
-        c.dailyAllowance,
-      )} a day)${
-        c.variance < 0 ? `, and you are ${gbp(Math.abs(c.variance))} under the straight line` : ''
-      }. Carrying on as you have been — ${patternPhrase(c.spendDays, c.dayOfMonth, c.typicalSpendDay)} — finishes the month at about ${gbp(
-        c.projectionEveryday.endOfMonthTotal,
-      )}. Nothing to fix — the budget is there to be spent.`,
+      id: 'run-out',
+      tone: f.probabilityRunOut > 0.6 ? 'bad' : 'warn',
+      title: `If it does run out, most likely around the ${formatDayOfMonth(c.month, f.likelyRunOutDay)}`,
+      body: `That happens in ${pc(
+        f.probabilityRunOut,
+      )} of runs — it is a risk, not a forecast. Skipping one night out moves that date back by roughly ${Math.max(
+        1,
+        Math.round(c.typicalBigNight / Math.max(1, c.dailyAllowance)),
+      )} days.`,
     });
   }
 
-  if (c.hasLog && c.thinEvidence && c.remaining > 0) {
+  if (c.status !== 'spent-up' && (c.status === 'under-pace' || c.status === 'on-pace') && f.thin) {
     tips.push({
       id: 'thin-evidence',
       tone: 'neutral',
-      title: 'Early days — treat the projection as a sketch',
-      body: `It is day ${c.dayOfMonth} with ${c.spendDays} spend day${
-        c.spendDays === 1 ? '' : 's'
-      } logged, which is not much to read a pattern from. The figure worth trusting today is the simple one: ${gbp(
-        c.remaining,
-      )} left across ${c.daysLeft} days. The projection sharpens up after a week or two of logging.`,
+      title: 'Early days — treat the range as a sketch',
+      body: `There ${f.sampleSize === 1 ? 'is' : 'are'} only ${f.sampleSize} day${
+        f.sampleSize === 1 ? '' : 's'
+      } of history to work from${
+        f.usedPriorMonths ? ', including earlier months' : ''
+      }. The figure worth trusting today is the simple one: ${gbp(c.remaining)} left across ${
+        c.daysLeft
+      } days. The range sharpens up as the month fills in.`,
     });
   }
 
@@ -560,8 +505,8 @@ function buildTips(c: {
     tips.push({
       id: 'log-it',
       tone: 'neutral',
-      title: 'Log spends as they happen for a real run-out date',
-      body: 'With a single running total the projection has to assume you spend evenly. Once individual spends are logged, big nights are separated from everyday spending and the two forecasts below stop being guesses.',
+      title: 'Log spends as they happen for a real forecast',
+      body: 'With a single running total there are no individual days to learn from, so the forecast has to assume you spend evenly. Log spends — or import a Monzo CSV — and the range starts reflecting how your months actually go.',
     });
   }
 

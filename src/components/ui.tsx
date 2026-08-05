@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { money } from '../format';
+import { useIsMobile } from '../useMediaQuery';
 
 export function Card({
   title,
@@ -159,3 +160,49 @@ export const SERIES = [
   'var(--series-7)',
   'var(--series-8)',
 ];
+
+/**
+ * A Card on a big screen; a collapsed disclosure on a phone, where a column of
+ * full-height cards turns the page into an endless scroll.
+ */
+export function Collapsible({
+  title,
+  sub,
+  summary,
+  defaultOpen = false,
+  actions,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  /** Shown next to the title when collapsed, so the card is useful unopened. */
+  summary?: React.ReactNode;
+  defaultOpen?: boolean;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const isMobile = useIsMobile();
+  if (!isMobile) {
+    return (
+      <Card title={title} sub={sub} actions={actions}>
+        {children}
+      </Card>
+    );
+  }
+  return (
+    <details className="card card-collapsible" open={defaultOpen}>
+      <summary>
+        <span className="collapsible-title">
+          {title}
+          {sub && <span className="card-sub">{sub}</span>}
+        </span>
+        {summary && <span className="collapsible-summary">{summary}</span>}
+        <span className="collapsible-chevron" aria-hidden="true" />
+      </summary>
+      <div className="collapsible-body">
+        {actions && <div style={{ marginBottom: 10 }}>{actions}</div>}
+        {children}
+      </div>
+    </details>
+  );
+}
