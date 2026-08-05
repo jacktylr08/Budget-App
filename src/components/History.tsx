@@ -116,8 +116,12 @@ export function History() {
             ) : (
               <>
                 You have been spending {money(-over, { decimals: false })} a month more than the
-                budget allows. Either the budget is too tight to be real, or the extra is coming
-                from somewhere the plan does not see.
+                budget allows — {money(-over * 12, { decimals: false })} a year, and it has to
+                come from somewhere: savings, an overdraft or a card. Before cutting anything,
+                check the budget and the log are measuring the same thing. A budget set for
+                nights out will never cover a log that also contains the food shop and the
+                train fare; those belong on their own line alongside rent, so the number you
+                are watching is the part you actually choose.
               </>
             )}
           </div>

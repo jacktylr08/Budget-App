@@ -120,6 +120,22 @@ payment — a night out is a bar, a taxi and a kebab. When this month is only a 
 earlier months' logs are used as the sample, and the card says so rather than pretending to
 precision it has not earned.
 
+### Make the budget and the log measure the same thing
+
+The commonest way a budget goes wrong is not overspending — it is counting. A budget set for
+*fun* (pubs, eating out, entertainment, shopping) compared against a log that also contains
+the weekly food shop, train fares and haircuts will read as a permanent, demoralising
+overspend, and cutting the fun budget will never fix it.
+
+Split them. Put steady necessities — groceries, transport, coffee, personal care — on their
+own fixed-cost line next to rent, where they are honest about not really being a choice, and
+leave the budget measuring the part you do choose. Exclude those categories at import so the
+log matches.
+
+Done on the real data behind this app, a single £1,046 "discretionary" figure became £794 of
+fun and £258 of living. The same budget went from needing an implausible £470 cut to a
+plausible £219 one, without a penny of difference in what was actually spent.
+
 ### Logging it
 
 Three ways, switchable at any time on the card:
